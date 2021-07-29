@@ -3,7 +3,6 @@ variable "region" {
 }
 
 variable "project" {
-  default = "google.com:ml-baguette-demos"
 }
 
 variable "location" {
@@ -11,11 +10,7 @@ variable "location" {
 }
 
 variable "env" {
-  default = "dev_kyc_1"
-}
-
-variable "service_account_email" {
-  default = "my-documentai-sa@ml-baguette-demos.google.com.iam.gserviceaccount.com"
+  default = "dev_lcbft_1"
 }
 
 variable "service_account_name" {
