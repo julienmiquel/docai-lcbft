@@ -1,6 +1,6 @@
 # Document AI pipeline
 
-An example of document AI pipeline
+An example of document AI KYC pipeline
 
 ## Setup the pipeline
 
