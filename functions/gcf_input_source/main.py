@@ -22,6 +22,9 @@ from google.cloud import documentai_v1beta3 as documentai
 from google.cloud import storage
 from google.cloud import pubsub_v1
 
+from dateutil import parser
+
+
 def get_env():
     print(os.environ)
     if 'GCP_PROJECT' in os.environ:
@@ -30,6 +33,7 @@ def get_env():
     _, project_id = google.auth.default()
     print(project_id)
     return project_id
+
 
 # Reading environment variables
 gcs_output_uri_prefix = os.environ.get('GCS_OUTPUT_URI_PREFIX')
@@ -60,16 +64,19 @@ table_name = 'doc_ai_extracted_entities'
 # and to avoid BigQuery load job fails due to inknown fields
 bq_schema = {
     "input_file_name": "STRING",
+    "insert_date": "DATE",
 
     # CI
     "family_name": "STRING",
-    "date_of_birth": "STRING",
+    "date_of_birth": "DATE",
     "document_id": "STRING",
     "given_names": "STRING",
 
     "address": "STRING",
-    "expiration_date": "STRING",    
-    "issue_date": "STRING",
+    "expiration_date": "DATE",    
+    "issue_date": "DATE",
+
+    "error": "STRING",
 
     # Invoices
     "carrier": "STRING",
@@ -116,15 +123,28 @@ bq_load_schema = []
 for key, value in bq_schema.items():
     bq_load_schema.append(bigquery.SchemaField(key, value))
 
+bq_schema_rules = {
+    "input_file_name": "STRING",
+    "name": "STRING"
+}
+bq_load_schema_rules = []
+for key, value in bq_schema.items():
+    bq_load_schema_rules.append(bigquery.SchemaField(key, value))
+
+
 opts = {"api_endpoint": f"{location}-documentai.googleapis.com"}
 docai_client = documentai.DocumentProcessorServiceClient(client_options=opts)
 
 storage_client = storage.Client()
-bq_client = bigquery.Client()
+bq_client = bigquery.Client( project_id )
 pub_client = pubsub_v1.PublisherClient()
 
 
 def write_to_bq(dataset_name, table_name, entities_extracted_dict):
+
+    if len(entities_extracted_dict) == 0:
+        print("Nothing to write")
+        return 
 
     dataset_ref = bq_client.dataset(dataset_name)
     table_ref = dataset_ref.table(table_name)
@@ -157,19 +177,70 @@ def write_to_bq(dataset_name, table_name, entities_extracted_dict):
     error = job.result()  # Waits for table load to complete.
     print(error)
 
+    
+
+def checkBusinessRule(dataset_name):
+    #/// Check business rules
+    # Perform a query.
+    QUERY = (
+        f'SELECT name, query FROM `{dataset_name}.business_rules` '
+        'WHERE trigger = "every_insert" ')
+
+    query_job = bq_client.query(QUERY)  # API request
+    rows = query_job.result()  # Waits for query to finish
+    print(rows)
+    row_to_insert = []
+
+    for row in rows:
+        row_to_insert = runBusinessRule(row_to_insert, row.query)
+    
+    if len(row_to_insert) > 0:
+        write_to_bq(dataset_name,"business_rules_result", row_to_insert)
+    else:
+        print("No business rules matched")
+
+    return 
+    runBusinessRule(row_to_insert, f'SELECT input_file_name, "address_is_null" as name FROM \
+        `{dataset_name}.doc_ai_extracted_entities` where address is null')
+
+    runBusinessRule(row_to_insert, f'SELECT input_file_name, "address_not_found" as name FROM \
+        `{dataset_name}.doc_ai_extracted_entities` where address is not null and input_file_name not in (select input_file_name from `{dataset_name}.geocodes_details`) ')
+
+
+def runBusinessRule(row_to_insert, query):
+    print(f'business rule: {query}')
+        
+    query_job = bq_client.query(query)  # API request
+    rows_business_rule = query_job.result()  # Waits for query to finish
+
+    for row_rule_matched in rows_business_rule:
+        print(f'Row returned: {row_rule_matched.name} , {row_rule_matched.input_file_name}')
+        row_to_insert[row_rule_matched.name] = row_rule_matched.input_file_name
+
+    return row_to_insert
 
 def main_run(event, context):
     gcs_input_uri = 'gs://' + event['bucket'] + '/' + event['name']
-    print('Printing the contentType: ' + event['contentType'])
+    print('Printing the contentType: ' + event['contentType'] + ' input:' + gcs_input_uri)
     print(name)
 
-    if(event['contentType'] == 'image/gif' or event['contentType'] == 'application/pdf' or event['contentType'] == 'image/tiff' or event['contentType'] == 'image/jpeg'):
+    if(event['contentType'] == 'image/gif' or event['contentType'] == 'application/pdf' 
+    or event['contentType'] == 'image/tiff' or event['contentType'] == 'image/jpeg'):
         
+        #doc_type = getDocType(input)
+
         input_config = documentai.types.document_processor_service.BatchProcessRequest.BatchInputConfig(
-            gcs_source=gcs_input_uri, mime_type=event['contentType'])
+            gcs_source=gcs_input_uri, mime_type=event['contentType']
+            )
+
+        l_destination_uri = destination_uri+ '/' + event['name']+ '/'
+        print('destination_uri:' + l_destination_uri)
+
+        l_destination_uri = l_destination_uri.replace('//', '/')
+        print('destination_uri:' + l_destination_uri)
         # Where to write results
         output_config = documentai.types.document_processor_service.BatchProcessRequest.BatchOutputConfig(
-            gcs_destination=destination_uri)
+            gcs_destination=l_destination_uri)
 
         request = documentai.types.document_processor_service.BatchProcessRequest(
             name=name,
@@ -193,7 +264,7 @@ def main_run(event, context):
         bucket = storage_client.get_bucket(output_bucket)
 
         blob_list = list(bucket.list_blobs(prefix=prefix))
-        print("Output files:")
+        print("Processing output files")
 
         for i, blob in enumerate(blob_list):
             # Download the contents of this blob as a bytes object.
@@ -202,11 +273,11 @@ def main_run(event, context):
                 print(f"skipping non-supported file type {blob.name}")
             else:
                 # Setting the output file name based on the input file name
-                print("Fetching from " + blob.name)
+                print("Fetching from " + blob.name + " for input_filename " + gcs_input_uri)
                 #start = blob.name.rfind("/") + 1
                 #end = blob.name.rfind(".") + 1
                 input_filename = gcs_input_uri #blob.name[start:end:] + "gif"
-                print("input_filename " + input_filename)
+                
                 
                 # Getting ready to read the output of the parsed document - setting up "document"
                 blob_as_bytes = blob.download_as_bytes()
@@ -217,64 +288,80 @@ def main_run(event, context):
                 # Reading all entities into a dictionary to write into a BQ table
                 entities_extracted_dict = {}
                 entities_extracted_dict['input_file_name'] = input_filename
-                #entities_extracted = ""
-                for entity in document['entities']:
-                #for entity in document.entities:    
-                    #entity_type = str(entity.type_)
-                    print(entity)
+                entities = document['entities']
+                if not entities:
+                    print("log an error")
+                    entity_type ="error"
+                    entity_text = "entities returned by docai is empty" 
+                    entities_extracted_dict[entity_type] = entity_text
+                else:
 
-                    entity_type = getKey(entity,'type')
-                    entity_type = entity_type.replace(' ', '_').replace('/','_').lower()
-                    entity_text = getKey(entity,'mentionText')
-                    entity_confidence = getKey(entity,'confidence')
-                    
-                    # Not available yet
-                    entity_normalized_value = getKey(entity, 'normalized_value')
-                    
-                    #entity_text = str(entity.mentionText)
-                    # Normalize date format in case the entity being read is a date
-                    if "date" in entity_type:
-                        print(entity_text)
-                        #d = datetime.strptime(entity_text, '%Y-%m-%d').date()
-                        entities_extracted_dict[entity_type] = entity_text
-                        #print (d)
-                    else:
-                        entity_text = str(entity_text)
-                        print("Normalized text : " +
-                              entity_normalized_value)
-                        print("Mention text : " + entity_text)
-                        entities_extracted_dict[entity_type] = entity_text
-                        #print(entity_type + ":" + entity_text)
+                    for entity in document['entities']:
+                    #for entity in document.entities:    
+                        #entity_type = str(entity.type_)
+                        print(entity)
+
+                        entity_type = getKey(entity,'type')
+                        entity_type = entity_type.replace(' ', '_').replace('/','_').lower()
+                        entity_text = getKey(entity,'mentionText')
+                        entity_confidence = getKey(entity,'confidence')
+                        
+                        # Not available yet
+                        entity_normalized_value = getKey(entity, 'normalized_value')
+                        if len(entity_normalized_value) > 0: 
+                            print("Normalized text : " +
+                                    entity_normalized_value)
+                        
+                        #entity_text = str(entity.mentionText)
+                        # Normalize date format in case the entity being read is a date
+                        if "date" in entity_type:
+                            print(entity_text)
+                            #d = datetime.strptime(entity_text, '%Y-%m-%d').date()
+                            entity_text = entity_text.replace(' ', '')
+
+                            entity_text = parser.parse(entity_text).date().strftime('%Y-%m-%d')
+                            entities_extracted_dict[entity_type] = entity_text
+                            print(entity_text)
+
+                        else:
+                            entity_text = str(entity_text)
+                            
+                            #print("Mention text : " + entity_text)
+                            entities_extracted_dict[entity_type] = entity_text
+                            #print(entity_type + ":" + entity_text)
 
 
-                    # Creating and publishing a message via Pub Sub to validate address
-                    if (isContainAddress(entity_type) ) :
-                        print(input_filename)
-                        message = {
-                            "entity_type": entity_type,
-                            "entity_text": entity_text,
-                            "input_file_name": input_filename,
-                        }
-                        message_data = json.dumps(message).encode("utf-8")
+                        # Creating and publishing a message via Pub Sub to validate address
+                        if (isContainAddress(entity_type) ) :
+                            print(input_filename)
+                            message = {
+                                "entity_type": entity_type,
+                                "entity_text": entity_text,
+                                "input_file_name": input_filename,
+                            }
+                            message_data = json.dumps(message).encode("utf-8")
 
-                        sendGeoCodeRequest(message_data)
-                        sendKGRequest(message_data)                        
+                            sendGeoCodeRequest(message_data)
+                            sendKGRequest(message_data)                        
 
-                    if (isContainName(entity_type) ) :
-                        print(input_filename)
-                        message = {
-                            "entity_type": entity_type,
-                            "entity_text": entity_text,
-                            "input_file_name": input_filename,
-                        }
-                        message_data = json.dumps(message).encode("utf-8")
+                        if (isContainName(entity_type) ) :
+                            print(input_filename)
+                            message = {
+                                "entity_type": entity_type,
+                                "entity_text": entity_text,
+                                "input_file_name": input_filename,
+                            }
+                            message_data = json.dumps(message).encode("utf-8")
 
-                        sendKGRequest(message_data)                        
+                            sendKGRequest(message_data)                        
 
             print(entities_extracted_dict)
             print("Writing to BQ")
             # Write the entities to BQ
             write_to_bq(dataset_name, table_name, entities_extracted_dict)
+
+            # Check business rules
+            checkBusinessRule(dataset_name)
 
         # print(blobs)
         # Deleting the intermediate files created by the Doc AI Parser
@@ -329,7 +416,7 @@ def isContainAddress(entity_type):
             print("find address:" + entity_type)
             return True
     
-    print("address not found in :" + entity_type)
+
     return False
 
 def isContainName(entity_type):
@@ -344,6 +431,25 @@ def getKey(entity, key):
         return entity[key]
         
     return ''
+
+def getDocType(input):
+    if input.lower().find("fr_driver_license") >= 0:
+        doc_type = 'fr_driver_license'
+
+    elif input.lower().find("fr_national_id") >= 0:
+        doc_type = "fr_national_id"
+
+    elif input.lower().find("us_passport") >= 0:
+        doc_type = "us_passport"
+
+    elif input.lower().find("us_driver_license") >= 0:
+        doc_type = "us_driver_license"
+
+    else:
+        doc_type = "fr_national_id"
+    return doc_type
+
+# Old code
 
 def main_run_ex(event, context):
     print('Event ID: {}'.format(context.event_id))
@@ -382,23 +488,9 @@ def main_run_ex(event, context):
         print("Exit: Extention not recognized:" + input)
         return
 
-    if input.lower().find("fr_driver_license") >= 0:
-        doc_type = 'fr_driver_license'
+    doc_type = getDocType(input)
 
-    elif input.lower().find("fr_national_id") >= 0:
-        doc_type = "fr_national_id"
 
-    elif input.lower().find("us_passport") >= 0:
-        doc_type = "us_passport"
-
-    elif input.lower().find("us_driver_license") >= 0:
-        doc_type = "us_driver_license"
-
-    else:
-        doc_type = "fr_national_id"
-
-    project_id = get_env()
-    print(project_id)
 
     row = kyc(input, doc_type, mime_type)
     document = row
@@ -414,6 +506,8 @@ def main_run_ex(event, context):
     print("Insert BQ done in : " + bqTableName)
 
     return "OK"
+
+
 
 
 def getDF(document, name, doc_type):
