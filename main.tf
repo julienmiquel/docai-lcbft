@@ -1,41 +1,4 @@
-variable "region" {
-  default = "europe-west1"
-}
 
-variable "API_KEY_KG_GEOCODES" {
-}
-variable "project" {
-  default = "google.com:finance-practice"
-}
-
-variable "location" {
-  default = "EU"
-}
-
-variable "env" {
-  default = "dev_lcbft_1"
-}
-
-variable "PROCESSOR_CNI_ID" {
-  default = "7b9066f18d0c7366"
-}
-
-variable "PROCESSOR_CNI_LOCATION" {
-  default = "eu"
-}
-
-variable "service_account_name" {
-  default = "lcbft-sa-3"
-}
-
-
-variable "deletion_protection" {
-  default = false
-}
-
-provider "google" {
-  region = var.region
-}
 
 //Service Account (right to call doc AI)
 resource "google_service_account" "sa" {
@@ -63,6 +26,21 @@ resource "google_storage_bucket" "gcs_input_doc" {
     "env" : var.env
   }
 }
+
+
+resource "google_storage_bucket" "gcs_output_doc" {
+  name                        = format("gcs_output_doc_%s", var.env)
+  location                    = var.location
+  force_destroy               = true
+  project                     = var.project
+  uniform_bucket_level_access = true
+  labels = {
+    "env" : var.env
+  }
+}
+
+
+
 
 // Cloud Storage function source archive 
 resource "google_storage_bucket" "bucket_source_archives" {
@@ -108,7 +86,7 @@ resource "google_cloudfunctions_function" "gcf_input" {
   max_instances    = 3
   ingress_settings = "ALLOW_INTERNAL_ONLY"
 
-  available_memory_mb   = 256
+  available_memory_mb   = 512
   source_archive_bucket = google_storage_bucket.bucket_source_archives.name
   source_archive_object = google_storage_bucket_object.gcf_input_source.name
 
@@ -137,8 +115,8 @@ resource "google_cloudfunctions_function" "gcf_input" {
     GEOCODE_REQUEST_TOPICNAME = google_pubsub_topic.pubsub_geocode_topic.name ,
     KG_REQUEST_TOPICNAME      = google_pubsub_topic.pubsub_getkg_topic.name  ,
 
-    gcs_output_uri = "gs://jm-docai-kyc-output-invoices",
-    gcs_archive_bucket_name : "jm-docai-kyc-archived-invoices"
+    gcs_output_uri = google_storage_bucket.gcs_output_doc.url ,
+    gcs_archive_bucket_name : google_storage_bucket.gcs_output_doc.name
   }
 }
 

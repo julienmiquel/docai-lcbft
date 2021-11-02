@@ -1,6 +1,18 @@
 
 
 // Big query
+resource "google_bigquery_dataset" "dataset_docai_looker" {
+  dataset_id    = format("bq_looker_%s", var.env)
+  friendly_name = "Looker Dataset"
+  description   = "Store Looker config"
+  location      = var.location
+  project       = var.project
+
+  labels = {
+    env : var.env
+  }
+}
+
 resource "google_bigquery_dataset" "dataset_results_docai" {
   dataset_id    = format("bq_results_%s", var.env)
   friendly_name = "Invoices results"
@@ -12,6 +24,7 @@ resource "google_bigquery_dataset" "dataset_results_docai" {
     env : var.env
   }
 }
+
 
 
 resource "google_bigquery_table" "business_rules_result" {
@@ -271,9 +284,33 @@ resource "google_bigquery_table" "doc_ai_extracted_entities" {
   {
     "mode": "NULLABLE",
     "name": "insert_date",
-    "type": "DATE",
+    "type": "DATETIME",
     "description": "date of insert"
   },  
+  {
+    "mode": "NULLABLE",
+    "name": "doc_type",
+    "type": "STRING",
+    "description": "type of the document processed"
+  },  
+  {
+    "mode": "NULLABLE",
+    "name": "signed_url",
+    "type": "STRING",
+    "description": "http signed URL of the archived file"
+  },    
+  {
+    "mode": "NULLABLE",
+    "name": "result",
+    "type": "STRING",
+    "description": "docAI blob result"
+  },      
+  {
+    "mode": "NULLABLE",
+    "name": "image",
+    "type": "BYTES",
+    "description": "image stored as bytes"
+  },
   {
     "mode": "NULLABLE",
     "name": "family_name",
@@ -321,6 +358,12 @@ resource "google_bigquery_table" "doc_ai_extracted_entities" {
     "name": "error",
     "type": "STRING",
     "description": "error message"
+  },
+  {
+    "mode": "NULLABLE",
+    "name": "timer",
+    "type": "INTEGER",
+    "description": "processing time"
   },
   {
     "mode": "NULLABLE",
