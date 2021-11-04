@@ -293,6 +293,12 @@ resource "google_bigquery_table" "doc_ai_extracted_entities" {
     "type": "STRING",
     "description": "type of the document processed"
   },  
+   {
+    "mode": "NULLABLE",
+    "name": "key",
+    "type": "STRING",
+    "description": "key to be share between different documents"
+  },   
   {
     "mode": "NULLABLE",
     "name": "signed_url",

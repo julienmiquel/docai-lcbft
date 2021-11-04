@@ -8,10 +8,12 @@ import time
 
 import dateutil
 
-from google.cloud import storage
+
+from ghostscript import Ghostscript
 
 from PyPDF2 import PdfFileWriter, PdfFileReader
 from urllib.parse import urlparse
+from google.api_core import retry
 import pandas_gbq
 import pandas as pd
 
@@ -20,12 +22,16 @@ import re
 import os
 import json
 from datetime import datetime
+
 from google.cloud import bigquery
 from google.cloud import documentai_v1 as documentai
 from google.cloud import storage
 from google.cloud import pubsub_v1
+#from google.cloud import logging
 
 from dateutil import parser
+from typing import List, Union
+
 
 
 def get_env():
@@ -80,6 +86,10 @@ def getDocType(input : str):
         doc_type = "us_passport"
         processor_path = docai_us_passport
 
+    elif input.lower().find("fr_passport") >= 0:
+        doc_type = "fr_passport_not_yet_supported"
+        processor_path = docai_us_passport        
+
 
     elif input.lower().find("us_driver_license") >= 0:
         doc_type = "us_driver_license"
@@ -88,7 +98,7 @@ def getDocType(input : str):
 
     elif input.lower().find("invoice") >= 0:
         doc_type = "invoice"
-        processor_path = docai_us_driver_license
+        processor_path = docai_invoice
 
     else:
         doc_type = "fr_national_id"
@@ -108,6 +118,7 @@ bq_schema = {
     "insert_date": "DATETIME",
     "doc_type": "STRING",
     "signed_url": "STRING",
+    "key": "STRING",
     "image": "BYTES",
 
     # CI
@@ -283,9 +294,93 @@ def generate_signed_url(service_account_file, bucket_name, object_name,
 
     return signed_url
 
+import tempfile
+ROOT_FOLDER = os.path.abspath(tempfile.gettempdir())
+TMP_FOLDER = os.path.join(ROOT_FOLDER, "tmp")
+PDF_FOLDER = os.path.join(TMP_FOLDER, "pdf")
+JPG_FOLDER = os.path.join(TMP_FOLDER, "jpg")
+ERROR_FOLDER = os.path.join(TMP_FOLDER, "error")
+
+def create_tmp_folders():
+    """
+    Function that creates tmp local folders where to store intermediate files
+    """
+    for folder in (PDF_FOLDER, JPG_FOLDER, ERROR_FOLDER):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+            print(f"make dir: {folder}")
+
+def send_file(path, filepath):
+    print("Uploading %s to %s", filepath, path)
+    blob = __get_blob(path)
+    blob.upload_from_filename(filepath)
+    return blob
+
+def __get_bucket(path):
+    bucket_name, _ = __parse_url(path)
+    return storage_client.get_bucket(bucket_name)
+
+def get_data(path):
+    print("Reading data from %s", path)
+
+    blob = __get_blob(path)
+    return blob.download_as_string()
+
+def __get_blob(path):
+    bucket_name, file_name = __parse_url(path)
+    bucket = storage_client.get_bucket(bucket_name)
+    return bucket.blob(file_name, chunk_size=10485760)  # 10MB
+
+
+def __parse_url(path):
+    match = re.match(r"^gs://(?P<bucket>[^\/]+)/(?P<file_name>.*)$", path)
+
+    if match:
+        return match.groups()
+
+    print(f"Invalid GCS path: {path}")
+
+def get_file(path, filepath):
+    print("Reading data from %s to %s", path, filepath)
+
+    blob = __get_blob(path)
+    return blob.download_to_filename(filepath)
+
 def main_run(event, context):
     gcs_input_uri = 'gs://' + event['bucket'] + '/' + event['name']
     print('Printing the contentType: ' + event['contentType'] + ' input:' + gcs_input_uri)
+
+    uri = urlparse(gcs_input_uri)
+    bucket = storage_client.get_bucket(uri.hostname)
+    blob = bucket.get_blob(uri.path[1:])
+    image_content = blob.download_as_bytes()
+
+    if( event['contentType'] == 'application/pdf' ):
+        print("create tmp folder")
+        create_tmp_folders()
+        print("convert pdf to image before processing")
+        #gcs_uri_in = os.path.join("gs://", event["bucket"], event["name"])
+        
+        print(f"Preprocessing split from uri: {gcs_input_uri}")
+        tmp_pdf_filepaths, success = split_one_pdf_pages(gcs_input_uri)
+
+        tmp_jpg_filepaths = convert_all_pdf_to_jpg(tmp_pdf_filepaths)
+        if tmp_jpg_filepaths != []:
+            for file in tmp_jpg_filepaths:
+                output=os.path.join(gcs_input_uri, os.path.basename(file))
+                print(f"Send file: {file} to {output}")
+            
+                blob = send_file(output,        file)
+                print(f"Successfully sent jpg pages of file{blob.public_url}  ")
+
+        else:
+            print("error convert_all_pdf_to_jpg return no files") 
+        
+        print(f"pdf converted to jpg to {blob.public_url} will now exit")
+        # Copy input file to archive bucket
+        backupAndDeleteInput(event)
+
+        return
 
     t0 = time.time()
 
@@ -294,45 +389,41 @@ def main_run(event, context):
         
         doc_type, name = getDocType(gcs_input_uri)
  
-        uri = urlparse(gcs_input_uri)
-
-        bucket = storage_client.get_bucket(uri.hostname)
-
-        blob = bucket.get_blob(uri.path[1:])
-        image_content = blob.download_as_bytes()
-
         document = {"content": image_content,"mime_type":event['contentType']}
-        request = {"name": name, "raw_document": document}
+        request = {"name": name, "raw_document": document }
                 
         print("Wait for the operation to finish")
 
-        result = docai_client.process_document(request=request)
+        result = docai_client.process_document(request=request ) #, retry= retry.Retry(deadline=60)  ,metadata=  ("jmb", "test"))
         print("Operation finished")
-
+        
         document = result.document
         input_filename = gcs_input_uri
+
+        key = os.path.dirname(uri.path)[1:]
+        key = key.replace(doc_type,"").replace("/","")
+        print(f"key: {key} - input_filename : {input_filename} - doc type : {doc_type} - EP url : {name}")
 
         # Reading all entities into a dictionary to write into a BQ table
         entities_extracted_dict = {}
         entities_extracted_dict['input_file_name'] = input_filename
         entities_extracted_dict['doc_type'] = doc_type
+        entities_extracted_dict['key'] =  key
         #entities_extracted_dict['image'] = base64.b64encode(image_content).decode('ascii')
         entities_extracted_dict['insert_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        entities_extracted_dict['result'] = document
-        print(str(result.document).replace('\n','\t').replace('\cr','\t'))
+        #entities_extracted_dict['result'] = json.dumps(document.entities).encode("utf-8")
+        #print(str(result.document).replace('\n','\t').replace('\cr','\t'))
 
         entities = document.entities
         if not entities or len(entities) == 0:
-            print("log an error")
-            entity_type ="error"
             entity_text = "entities returned by docai is empty" 
+            entity_type ="error"
+            print(f"{entity_type} - {entity_text}")
             entities_extracted_dict[entity_type] = entity_text
         else:
             print(f"entities size: {len(entities)}")
 
             for entity in entities:
-            #for entity in document.entities:    
-                #entity_type = str(entity.type_)
                 print(str(entity).replace('\n','\t'))
 
                 entity_type = cleanEntityType(entity.type_)
@@ -340,7 +431,6 @@ def main_run(event, context):
                 entity_confidence = entity.confidence
                 print(f"{entity_type}:{entity_text} - {entity_confidence}")
 
-                #entity_text = str(entity.mentionText)
                 # Normalize date format in case the entity being read is a date
                 if "date" in entity_type:
                     #print(entity_text.replace('\n','\t'))
@@ -356,25 +446,41 @@ def main_run(event, context):
                         entity_text = f"Parser error for entity type:value:{entity_type}:value:{entity_text}" 
                         entities_extracted_dict[entity_type] = entity_text
                     
+                elif "amount" in entity_type:
+                    #TODO: FIX this code
+                    try:                        
+                        entity_text = float(entity_text)
+                    except ValueError  as err:
+                        print("error: " + err)
+                        try:                        
+                            entity_text = entity_text.replace(',','.')
+                        except ValueError  as err:
+                            print("error: " + err)
+                            entity_text = str(entity_text)
+                    
+                    entities_extracted_dict[entity_type] = entity_text
+
                 else:
                     entity_text = str(entity_text)
                     
                     #print("Mention text : " + entity_text)
                     entities_extracted_dict[entity_type] = entity_text
-                    #print(entity_type + ":" + entity_text)
-
 
                 # Creating and publishing a message via Pub Sub to validate address
                 if (isContainAddress(entity_type) ) :
+                    if doc_type.find("fr") >=0:
+                        entity_address = entity_text + " France"
+                    else:
+                        entity_address = entity_text
                     message = {
                         "entity_type": entity_type,
-                        "entity_text": entity_text,
+                        "entity_text": entity_address,
                         "input_file_name": input_filename,
                     }
                     message_data = json.dumps(message).encode("utf-8")
 
                     sendGeoCodeRequest(message_data)
-                    sendKGRequest(message_data)                        
+                    #sendKGRequest(message_data)                        
 
                 if (isContainName(entity_type) ) :
                     message = {
@@ -398,11 +504,12 @@ def main_run(event, context):
 
                 entities_extracted_dict[entity_type] = field_value
 
+        entities_extracted_dict['timer'] = int(time.time()-t0)
+
         signed_url = generate_signed_url("google.com_ml-baguette-demos-f1b859baa944.json", gcs_archive_bucket_name, event['name'])
         print(signed_url)
         entities_extracted_dict['signed_url'] = signed_url
-        entities_extracted_dict['timer'] = int(time.time()-t0)
-
+        
         print(entities_extracted_dict)
         print(f"Writing to BQ: {input_filename}")
         # Write the entities to BQ
@@ -421,18 +528,22 @@ def main_run(event, context):
             
         
         # Copy input file to archive bucket
-        source_bucket = storage_client.bucket(event['bucket'])
-        source_blob = source_bucket.blob(event['name'])
-        destination_bucket = storage_client.bucket(gcs_archive_bucket_name)
+        backupAndDeleteInput(event)
 
-        print(f"backup input file to: {destination_bucket.path}{event['name']}")
-        blob_copy = source_bucket.copy_blob(
-            source_blob, destination_bucket, event['name'])
-        # delete from the input folder
-        print(f"delete input file to: {source_blob.path} {event['name']}")
-        source_blob.delete()
     else:
         print('Cannot parse the file type')
+
+def backupAndDeleteInput(event):
+    source_bucket = storage_client.bucket(event['bucket'])
+    source_blob = source_bucket.blob(event['name'])
+    destination_bucket = storage_client.bucket(gcs_archive_bucket_name)
+
+    print(f"backup input file to: {destination_bucket.path}{event['name']}")
+    blob_copy = source_bucket.copy_blob(
+        source_blob, destination_bucket, event['name'])
+    # delete from the input folder
+    print(f"delete input file to: {source_blob.path} {event['name']}")
+    source_blob.delete()
 
 def cleanEntityType(entity_type):
     if entity_type is None:
@@ -535,9 +646,9 @@ def main_run_batch(event, context):
 
                 entities = document['entities']
                 if not entities:
-                    print("log an error")
-                    entity_type ="error"
                     entity_text = "entities returned by docai is empty" 
+                    entity_type ="error"
+                    print(f"{entity_type} - {entity_text}")
                     entities_extracted_dict[entity_type] = entity_text
                 else:
 
@@ -689,6 +800,113 @@ def getKey(entity, key):
     return ''
 
 
+
+def write_single_page_pdf(inputpdf: PdfFileReader, num_page: int, filename: str) -> str:
+    """
+    Function that exports a page of an input pdf into a local file of a single page
+
+    Parameters
+    ----------
+    inputpdf: PdfFileReader
+        pdf file reader of raw input pdf
+    num_page: int
+        page number of input pdf to export
+    filename: str
+        filename of raw input
+
+    Returns
+    -------
+    output_paths: list
+        list of local paths where mono page pdf files are stored
+    """
+    outputpdf = PdfFileWriter()
+    outputpdf.addPage(inputpdf.getPage(num_page))
+    filepath_out = os.path.join(
+        PDF_FOLDER, filename.replace(".pdf", f"_page_{num_page}.pdf")
+    )
+    with open(filepath_out, "wb") as f:
+        outputpdf.write(f)
+    return filepath_out
+
+
+def split_one_pdf_pages(gcs_uri_in: str) -> Union[List[str], bool]:
+    """
+    Function that splits one pdf of N pages into N pdfs of 1 page
+
+    Parameters
+    ----------
+    gcs_uri_in: str
+        gcs uri of pdf file to split
+
+    Returns
+    -------
+    output_paths: list
+        list of local paths where mono page pdf files are stored
+    success: bool
+        True if splitting was a success, False else
+    """
+    if not gcs_uri_in.endswith("pdf"):
+        print(f"File in {gcs_uri_in} is not a pdf file")
+        local_filepath = os.path.join(ERROR_FOLDER, os.path.basename(gcs_uri_in))
+        get_file(gcs_uri_in, local_filepath)
+        return local_filepath, False
+    filename = os.path.basename(gcs_uri_in)
+    raw_data = get_data(gcs_uri_in)
+    inputpdf = PdfFileReader(io.BytesIO(raw_data), strict=False)
+    output_paths = []
+    for num_page in range(inputpdf.numPages):
+        filepath_out = write_single_page_pdf(inputpdf, num_page, filename)
+        output_paths.append(filepath_out)
+    return output_paths, True
+
+
+def convert_to_image(filepath_in: str) -> str:
+    """
+    Function that converts a single page pdf file into an image
+    taken from https://stackoverflow.com/questions/331918/converting-a-pdf-to-a-series-of-images-with-python
+
+    Parameters
+    ----------
+    filepath_in: str
+        local filepath of a pdf file
+
+    Returns
+    -------
+    filepath_out: str
+        local filepath of the converted jpg file
+    """
+    filepath_out = filepath_in.replace("pdf", "jpg")
+    args = [
+        "pdf2jpeg",  # actual value doesn't matter
+        "-dNOPAUSE",
+        "-sDEVICE=jpeg",
+        "-r144",
+        "-sOutputFile=" + filepath_out,
+        filepath_in,
+    ]
+    Ghostscript(*args)
+    return filepath_out
+
+
+def convert_all_pdf_to_jpg(pdf_filepaths: List[str]) -> List[str]:
+    """
+    Function that converts a single page pdf file into an image
+
+    Parameters
+    ----------
+    pdf_filepaths: List[str]
+        list of local filepaths to single pages pdf files
+
+    Returns
+    -------
+    jpg_filepaths: str
+        list of local filepaths to single pages jpg files
+    """
+    jpg_filepaths = []
+    for filepath_in in pdf_filepaths:
+        filepath_out = convert_to_image(filepath_in)
+        jpg_filepaths.append(filepath_out)
+    return jpg_filepaths
 
 
 def write_to_bq(dataset_name, table_name, entities_extracted_dict):
