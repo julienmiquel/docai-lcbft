@@ -14,6 +14,7 @@ from ghostscript import Ghostscript
 from PyPDF2 import PdfFileWriter, PdfFileReader
 from urllib.parse import urlparse
 from google.api_core import retry
+from google.cloud.documentai_v1.types.document_processor_service import ProcessResponse
 import pandas_gbq
 import pandas as pd
 
@@ -69,7 +70,8 @@ docai_fr_driver_license = "projects/660199673046/locations/eu/processors/cee6a41
 docai_fr_national_id = "projects/660199673046/locations/eu/processors/57993de9b197ee1f"
 docai_us_passport = "projects/660199673046/locations/eu/processors/3bd9c32d439b29cf"
 docai_us_driver_license = "projects/660199673046/locations/eu/processors/57993de9b197e27c"
-docai_invoice = "projects/660199673046/locations/eu/processors/abf12796440cc270"
+#docai_invoice = "projects/660199673046/locations/eu/processors/abf12796440cc270"
+docai_invoice = "projects/660199673046/locations/eu/processors/1371b8b51ffedfe8"
 
 def getDocType(input : str):
     
@@ -142,10 +144,10 @@ bq_schema = {
     "customer_tax_id": "STRING",
     "delivery_date": "DATE",
     "due_date": "DATE",
-    "freight_amount": "STRING",
+    "freight_amount": "FLOAT",
     "invoice_date": "DATE",
     "invoice_id": "STRING",
-    "net_amount": "STRING",
+    "net_amount": "FLOAT",
     "payment_terms": "STRING",
     "purchase_order": "STRING",
     "receiver_address": "STRING",
@@ -167,9 +169,9 @@ bq_schema = {
     "supplier_registration": "STRING",
     "supplier_tax_id": "STRING",
     "supplier_website": "STRING",
-    "total_amount": "STRING",
-    "total_tax_amount": "STRING",
-    "vat_tax_amount": "STRING",
+    "total_amount": "FLOAT",
+    "total_tax_amount": "FLOAT",
+    "vat_tax_amount": "FLOAT",
     "vat_tax_rate": "STRING",
     "line_item": "STRING",
     "receipt_date": "DATE",
@@ -294,6 +296,38 @@ def generate_signed_url(service_account_file, bucket_name, object_name,
 
     return signed_url
 
+#FIXME: very ugly code
+def convert_str_to_float(line : str) -> float:  
+
+    try:                        
+        return float(line.replace(" ",""))
+    except ValueError  as err:
+        print("warning float cast: " + line)
+    
+    try:                        
+        return  float(line.replace(" ","").replace(',','.') )
+    except ValueError  as err:
+        print("warning float cast trying regex methods: " + line)
+
+    try:                        
+        output = []
+        p = '-?[\d]+[.,\d]+|[\d]*[.][\d]+|[\d]+'
+        repl_str = re.compile(p)
+        line = line.split()
+        for word in line:
+            match = re.search(repl_str, word)
+            if match:
+                output.append(float(match.group()))
+
+        if len(output) == 0:
+            return 0.0
+        return output[0]
+    except ValueError  as err:
+        print("ERROR float cast after using ugly code : " + line)
+        return 0.0
+
+
+
 import tempfile
 ROOT_FOLDER = os.path.abspath(tempfile.gettempdir())
 TMP_FOLDER = os.path.join(ROOT_FOLDER, "tmp")
@@ -348,8 +382,13 @@ def get_file(path, filepath):
 
 def main_run(event, context):
     gcs_input_uri = 'gs://' + event['bucket'] + '/' + event['name']
+    
+    if "contentType" not in event:
+        print(event)
+        event['contentType'] = "None"
+        
     print('Printing the contentType: ' + event['contentType'] + ' input:' + gcs_input_uri)
-
+    
     uri = urlparse(gcs_input_uri)
     bucket = storage_client.get_bucket(uri.hostname)
     blob = bucket.get_blob(uri.path[1:])
@@ -381,8 +420,17 @@ def main_run(event, context):
         backupAndDeleteInput(event)
 
         return
-
+    
     t0 = time.time()
+    
+    if( str(event['name']).endswith(".json") or event['contentType'] == 'application/json' ):
+        doc_type = "invoice"
+        name = "hitl"
+
+        document = documentai.types.Document.from_json(image_content)
+        
+        parseDocAIResult(event, gcs_input_uri, uri, t0, doc_type, name, document, None)
+    
 
     if(event['contentType'] == 'image/gif' or event['contentType'] == 'application/pdf' 
     or event['contentType'] == 'image/tiff' or event['contentType'] == 'image/jpeg'):
@@ -394,126 +442,10 @@ def main_run(event, context):
                 
         print("Wait for the operation to finish")
 
-        result = docai_client.process_document(request=request ) #, retry= retry.Retry(deadline=60)  ,metadata=  ("jmb", "test"))
+        result = ProcessResponse(docai_client.process_document(request=request )) #, retry= retry.Retry(deadline=60)  ,metadata=  ("jmb", "test"))
         print("Operation finished")
-        
-        document = result.document
-        input_filename = gcs_input_uri
-
-        key = os.path.dirname(uri.path)[1:]
-        key = key.replace(doc_type,"").replace("/","")
-        print(f"key: {key} - input_filename : {input_filename} - doc type : {doc_type} - EP url : {name}")
-
-        # Reading all entities into a dictionary to write into a BQ table
-        entities_extracted_dict = {}
-        entities_extracted_dict['input_file_name'] = input_filename
-        entities_extracted_dict['doc_type'] = doc_type
-        entities_extracted_dict['key'] =  key
-        #entities_extracted_dict['image'] = base64.b64encode(image_content).decode('ascii')
-        entities_extracted_dict['insert_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        #entities_extracted_dict['result'] = json.dumps(document.entities).encode("utf-8")
-        #print(str(result.document).replace('\n','\t').replace('\cr','\t'))
-
-        entities = document.entities
-        if not entities or len(entities) == 0:
-            entity_text = "entities returned by docai is empty" 
-            entity_type ="error"
-            print(f"{entity_type} - {entity_text}")
-            entities_extracted_dict[entity_type] = entity_text
-        else:
-            print(f"entities size: {len(entities)}")
-
-            for entity in entities:
-                print(str(entity).replace('\n','\t'))
-
-                entity_type = cleanEntityType(entity.type_)
-                entity_text = entity.mention_text
-                entity_confidence = entity.confidence
-                print(f"{entity_type}:{entity_text} - {entity_confidence}")
-
-                # Normalize date format in case the entity being read is a date
-                if "date" in entity_type:
-                    #print(entity_text.replace('\n','\t'))
-                    #d = datetime.strptime(entity_text, '%Y-%m-%d').date()
-                    entity_text = entity_text.replace(' ', '')
-
-                    try:
-                        entity_text = parser.parse(entity_text).date().strftime('%Y-%m-%d')
-                        entities_extracted_dict[entity_type] = entity_text
-                        
-                    except dateutil.parser._parser.ParserError  as err:
-                        entity_type ="error"
-                        entity_text = f"Parser error for entity type:value:{entity_type}:value:{entity_text}" 
-                        entities_extracted_dict[entity_type] = entity_text
-                    
-                elif "amount" in entity_type:
-                    #TODO: FIX this code
-                    try:                        
-                        entity_text = float(entity_text)
-                    except ValueError  as err:
-                        print("error: " + err)
-                        try:                        
-                            entity_text = entity_text.replace(',','.')
-                        except ValueError  as err:
-                            print("error: " + err)
-                            entity_text = str(entity_text)
-                    
-                    entities_extracted_dict[entity_type] = entity_text
-
-                else:
-                    entity_text = str(entity_text)
-                    
-                    #print("Mention text : " + entity_text)
-                    entities_extracted_dict[entity_type] = entity_text
-
-                # Creating and publishing a message via Pub Sub to validate address
-                if (isContainAddress(entity_type) ) :
-                    if doc_type.find("fr") >=0:
-                        entity_address = entity_text + " France"
-                    else:
-                        entity_address = entity_text
-                    message = {
-                        "entity_type": entity_type,
-                        "entity_text": entity_address,
-                        "input_file_name": input_filename,
-                    }
-                    message_data = json.dumps(message).encode("utf-8")
-
-                    sendGeoCodeRequest(message_data)
-                    #sendKGRequest(message_data)                        
-
-                if (isContainName(entity_type) ) :
-                    message = {
-                        "entity_type": entity_type,
-                        "entity_text": entity_text,
-                        "input_file_name": input_filename,
-                    }
-                    message_data = json.dumps(message).encode("utf-8")
-
-                    sendKGRequest(message_data)                        
-
-        print("Read the text recognition output from the processor")
-        for page in document.pages:
-            for form_field in page.form_fields:
-                print(f"form_field:{form_field}")
-                entity_type = get_text(form_field.field_name, document)
-                entity_type = cleanEntityType(entity_type)
-
-                field_value = get_text(form_field.field_value, document)       
-                print(f"{entity_type}:{field_value} ")
-
-                entities_extracted_dict[entity_type] = field_value
-
-        entities_extracted_dict['timer'] = int(time.time()-t0)
-
-        signed_url = generate_signed_url("google.com_ml-baguette-demos-f1b859baa944.json", gcs_archive_bucket_name, event['name'])
-        print(signed_url)
-        entities_extracted_dict['signed_url'] = signed_url
-        
-        print(entities_extracted_dict)
-        print(f"Writing to BQ: {input_filename}")
-        # Write the entities to BQ
-        write_to_bq(dataset_name, table_name, entities_extracted_dict)
+ 
+        parseDocAIResult(event, gcs_input_uri, uri, t0, doc_type, name, result.document, result)
 
         delete_blob = False
         if delete_blob == True:
@@ -532,6 +464,145 @@ def main_run(event, context):
 
     else:
         print('Cannot parse the file type')
+
+def parseDocAIResult(event, gcs_input_uri, uri, t0, doc_type, name, document, result):
+    input_filename = gcs_input_uri
+
+    key = os.path.dirname(uri.path)[1:]
+    key = key.replace(doc_type,"").replace("/","")
+    print(f"key: {key} - input_filename : {input_filename} - doc type : {doc_type} - EP url : {name}")
+
+        # Reading all entities into a dictionary to write into a BQ table
+    entities_extracted_dict = {}
+    entities_extracted_dict['input_file_name'] = input_filename
+    entities_extracted_dict['doc_type'] = doc_type
+    entities_extracted_dict['key'] =  key
+        #entities_extracted_dict['image'] = base64.b64encode(image_content).decode('ascii')
+    entities_extracted_dict['insert_date'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        #entities_extracted_dict['result'] = json.dumps(document.entities).encode("utf-8")
+        #print(str(result.document).replace('\n','\t').replace('\cr','\t'))
+
+    try:
+        if result:
+            print(f"hitl: {result.human_review_status}" )
+            print(f"hitl: {result.human_review_status.json_name}" )
+            if result.human_review_status == documentai.HumanReviewStatus.State.SKIPPED:
+                print("hitl in progress")
+                entities_extracted_dict['hitl_json'] =  result.human_review_status.json_name
+    except Exception as err:
+        print("error in hitl processing")
+        print(err)
+        pass
+
+    entities = document.entities
+    if not entities or len(entities) == 0:
+        entities_extracted_dict= log_error(entities_extracted_dict)
+    else:
+        print(f"entities size: {len(entities)}")
+
+        for entity in entities:
+            print(str(entity).replace('\n','\t'))
+
+            entity_type = cleanEntityType(entity.type_)
+            entity_text = entity.mention_text
+            entity_confidence = entity.confidence
+            print(f"{entity_type}:{entity_text} - {entity_confidence}")
+
+                # Normalize date format in case the entity being read is a date
+            if "date" in entity_type:
+                    #print(entity_text.replace('\n','\t'))
+                    #d = datetime.strptime(entity_text, '%Y-%m-%d').date()
+                entity_text = entity_text.replace(' ', '')
+
+                try:
+                    entity_text = parser.parse(entity_text).date().strftime('%Y-%m-%d')
+                    entities_extracted_dict[entity_type] = entity_text
+                        
+                except dateutil.parser._parser.ParserError  as err:
+                    entity_type ="error"
+                    entity_text = f"Parser error for entity type:value:{entity_type}:value:{entity_text}" 
+                    entities_extracted_dict[entity_type] = entity_text
+                    
+            elif "amount" in entity_type:
+                #TODO: FIX this code
+                try:                        
+                    entity_text = convert_str_to_float(entity_text)
+                except Exception  as err:
+                    entities_extracted_dict= log_error(entities_extracted_dict, "warning float cast after replace , by . : " + entity_text)
+                    entity_text = 0.0
+                    
+                entities_extracted_dict[entity_type] = entity_text
+
+            else:
+                entity_text = str(entity_text)
+                    
+                    #print("Mention text : " + entity_text)
+                entities_extracted_dict[entity_type] = entity_text
+
+                # Creating and publishing a message via Pub Sub to validate address
+            if (isContainAddress(entity_type) ) :
+                if doc_type.find("fr") >=0:
+                    entity_address = entity_text + " France"
+                else:
+                    entity_address = entity_text
+                message = {
+                        "entity_type": entity_type,
+                        "entity_text": entity_address,
+                        "input_file_name": input_filename,
+                    }
+                message_data = json.dumps(message).encode("utf-8")
+
+                sendGeoCodeRequest(message_data)
+                    #sendKGRequest(message_data)                        
+
+            if (isContainName(entity_type) ) :
+                message = {
+                        "entity_type": entity_type,
+                        "entity_text": entity_text,
+                        "input_file_name": input_filename,
+                    }
+                message_data = json.dumps(message).encode("utf-8")
+
+                sendKGRequest(message_data)                        
+
+    print("Read the text recognition output from the processor")
+    for page in document.pages:
+        for form_field in page.form_fields:
+                #print(f"form_field:{form_field}")
+            entity_type = get_text(form_field.field_name, document)
+            entity_type = cleanEntityType(entity_type)
+
+            field_value = get_text(form_field.field_value, document)       
+            print(f"{entity_type}:{field_value} ")
+
+            entities_extracted_dict[entity_type] = field_value
+            try:
+                if len(page.image) > 0:
+                    destination_bucket = storage_client.bucket(gcs_archive_bucket_name)
+                    blob = destination_bucket.blob(event['name'] + ".jpg")
+                    blob.upload_from_string(page.image)
+            except Exception as err:
+                print("image error")
+                print(err)
+                pass
+
+    entities_extracted_dict['timer'] = int(time.time()-t0)
+
+    signed_url = generate_signed_url("google.com_ml-baguette-demos-f1b859baa944.json", gcs_archive_bucket_name, event['name'])
+    print(signed_url)
+    entities_extracted_dict['signed_url'] = signed_url
+        
+    print(entities_extracted_dict)
+    print(f"Writing to BQ: {input_filename}")
+        # Write the entities to BQ
+    write_to_bq(dataset_name, table_name, entities_extracted_dict)
+
+def log_error(entities_extracted_dict, entity_text = "entities returned by docai is empty" ):
+    
+    entity_type ="error"
+    print(f"{entity_type} - {entity_text}")
+    entities_extracted_dict[entity_type] = entity_text
+    return entities_extracted_dict
 
 def backupAndDeleteInput(event):
     source_bucket = storage_client.bucket(event['bucket'])
@@ -945,8 +1016,32 @@ def write_to_bq(dataset_name, table_name, entities_extracted_dict):
     print(json_object)
     job = bq_client.load_table_from_json(
         json_object, table_ref, job_config=job_config)
-    error = job.result()  # Waits for table load to complete.
-    print(error)
+
+    from google.api_core.exceptions import BadRequest, Forbidden
+
+    from google.cloud.bigquery.retry import DEFAULT_RETRY
+    from google.cloud.bigquery.retry import _should_retry
+
+    retryCount = 0
+    while(retryCount < 3):
+        try:
+            retryCount = retryCount + 1
+
+            error = job.result(retry=DEFAULT_RETRY)  # Waits for table load to complete.
+            print("BQ completed")
+            print(error)
+            return 
+        
+        except Forbidden as e:
+            for e in job.errors:
+                print('BQ ERROR Forbidden: {}'.format(e['message'])) 
+                logging.Logger.error('BQ ERROR: {}'.format(e['message'])) 
+
+        except BadRequest as e:
+            for e in job.errors:
+                print('BQ ERROR BadRequest: {}'.format(e['message'])) 
+                logging.Logger.error('BQ ERROR: {}'.format(e['message'])) 
+            return
 
     
 

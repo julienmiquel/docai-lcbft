@@ -27,6 +27,19 @@ resource "google_storage_bucket" "gcs_input_doc" {
   }
 }
 
+/*
+resource "google_storage_bucket" "gcs_results_json_dev_kyc" {
+  name                        = "gcs_results_json_dev_kyc" #format("gcs_output_doc_%s", var.env)
+  location                    = var.location
+  force_destroy               = true
+  project                     = var.project
+  uniform_bucket_level_access = true
+  labels = {
+    "env" : var.env
+  }
+}
+*/
+
 
 resource "google_storage_bucket" "gcs_output_doc" {
   name                        = format("gcs_output_doc_%s", var.env)
@@ -73,7 +86,7 @@ resource "google_storage_bucket_object" "gcf_input_source" {
 }
 
 
-//function 
+//function to process input documents
 resource "google_cloudfunctions_function" "gcf_input" {
   name        = format("gcf_input_%s", var.env)
   description = "gcf_input process input pdf"
@@ -95,6 +108,52 @@ resource "google_cloudfunctions_function" "gcf_input" {
   event_trigger {
     event_type = "google.storage.object.finalize"
     resource   = google_storage_bucket.gcs_input_doc.name
+    failure_policy {
+      retry = false
+    }
+  }
+  labels = {
+    "env" : var.env
+  }
+
+  environment_variables = {
+    BQ_DATASET_NAME = google_bigquery_dataset.dataset_results_docai.dataset_id,
+
+    PARSER_LOCATION       = var.PROCESSOR_CNI_LOCATION,
+    PROCESSOR_ID          = var.PROCESSOR_CNI_ID,
+    TIMEOUT               = 300,
+    GCS_OUTPUT_URI_PREFIX = "processed",
+
+    GEOCODE_REQUEST_TOPICNAME = google_pubsub_topic.pubsub_geocode_topic.name ,
+    KG_REQUEST_TOPICNAME      = google_pubsub_topic.pubsub_getkg_topic.name  ,
+
+    gcs_output_uri = google_storage_bucket.gcs_output_doc.url ,
+    gcs_archive_bucket_name : google_storage_bucket.gcs_output_doc.name
+  }
+}
+
+  //function dedicated to process results from HITL 
+resource "google_cloudfunctions_function" "gcf_input_hitl" {
+  name        = format("gcf_hitl_results_%s", var.env)
+  description = "gcf_input process results from HITL review"
+  region      = var.region
+  project     = var.project
+
+  runtime          = "python39"
+  entry_point      = "main_run"
+  timeout          = 300
+  max_instances    = 10
+  ingress_settings = "ALLOW_INTERNAL_ONLY"
+
+  available_memory_mb   = 256
+  source_archive_bucket = google_storage_bucket.bucket_source_archives.name
+  source_archive_object = google_storage_bucket_object.gcf_input_source.name
+
+  service_account_email = google_service_account.sa.email #var.service_account_email  
+
+  event_trigger {
+    event_type = "google.storage.object.finalize"
+    resource   = "gcs_results_json_dev_kyc"# google_storage_bucket.gcs_results_json_dev_kyc.name
     failure_policy {
       retry = false
     }

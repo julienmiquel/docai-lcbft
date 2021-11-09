@@ -36,3 +36,4 @@ variable "deletion_protection" {
 provider "google" {
   region = var.region
 }
+

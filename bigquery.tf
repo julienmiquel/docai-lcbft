@@ -409,7 +409,7 @@ resource "google_bigquery_table" "doc_ai_extracted_entities" {
   {
     "mode": "NULLABLE",
     "name": "net_amount",
-    "type": "STRING"
+    "type": "FLOAT"
   },
   {
     "mode": "NULLABLE",
@@ -469,12 +469,12 @@ resource "google_bigquery_table" "doc_ai_extracted_entities" {
   {
     "mode": "NULLABLE",
     "name": "total_amount",
-    "type": "STRING"
+    "type": "FLOAT"
   },
   {
     "mode": "NULLABLE",
     "name": "total_tax_amount",
-    "type": "STRING"
+    "type": "FLOAT"
   },
   {
     "mode": "NULLABLE",
@@ -494,12 +494,12 @@ resource "google_bigquery_table" "doc_ai_extracted_entities" {
   {
     "mode": "NULLABLE",
     "name": "freight_amount",
-    "type": "STRING"
+    "type": "FLOAT"
   },
   {
     "mode": "NULLABLE",
     "name": "vat_tax_amount",
-    "type": "STRING"
+    "type": "FLOAT"
   },
   {
     "mode": "NULLABLE",
