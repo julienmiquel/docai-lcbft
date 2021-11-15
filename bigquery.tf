@@ -301,6 +301,12 @@ resource "google_bigquery_table" "doc_ai_extracted_entities" {
   },   
   {
     "mode": "NULLABLE",
+    "name": "hitl",
+    "type": "STRING",
+    "description": "HITL ID"
+  },  
+  {
+    "mode": "NULLABLE",
     "name": "signed_url",
     "type": "STRING",
     "description": "http signed URL of the archived file"
