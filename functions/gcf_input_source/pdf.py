@@ -4,6 +4,7 @@ import os
 from typing import List, Union
 
 from PyPDF2.pdf import PdfFileReader, PdfFileWriter
+from PyPDF2.utils import PdfReadError
 
 import gcs
 from function_variables import FunctionVariables
@@ -28,15 +29,20 @@ def write_single_page_pdf(inputpdf: PdfFileReader, num_page: int, filename: str)
     output_paths: list
         list of local paths where mono page pdf files are stored
     """
-    outputpdf = PdfFileWriter()
-    outputpdf.addPage(inputpdf.getPage(num_page))
-    filepath_out = os.path.join(
-        var.PDF_FOLDER, filename.replace(".pdf", f"_page_{num_page}.pdf")
-    )
-    with open(filepath_out, "wb") as f:
-        outputpdf.write(f)
-    return filepath_out
-
+    try:
+        outputPath= filename.replace(".pdf", f"_page_{num_page}.pdf")
+        outputpdf = PdfFileWriter()
+        outputpdf.addPage(inputpdf.getPage(num_page))
+        filepath_out = os.path.join(
+            var.PDF_FOLDER, outputPath
+        )
+        with open(filepath_out, "wb") as f:
+            outputpdf.write(f)
+        return filepath_out
+    except PdfReadError as err:
+        print(f"ERROR in pdf generation file: {outputPath} ERROR: {err}")
+        print(err)
+        return None
 
 def split_one_pdf_pages(gcs_uri_in: str) -> Union[List[str], bool]:
     """
@@ -65,7 +71,8 @@ def split_one_pdf_pages(gcs_uri_in: str) -> Union[List[str], bool]:
     output_paths = []
     for num_page in range(inputpdf.numPages):
         filepath_out = write_single_page_pdf(inputpdf, num_page, filename)
-        output_paths.append(filepath_out)
+        if filepath_out != None:
+            output_paths.append(filepath_out)
     return output_paths, True
 
 

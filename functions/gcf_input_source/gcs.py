@@ -2,6 +2,7 @@ import os
 import re
 import tempfile
 from google.cloud import storage
+
 from function_variables import FunctionVariables
 
 # Reading environment variables
@@ -19,29 +20,34 @@ def create_tmp_folders():
     """
     Function that creates tmp local folders where to store intermediate files
     """
-    print("create tmp folder")
+    #print("create tmp folder")
     for folder in (var.PDF_FOLDER, var.JPG_FOLDER, var.ERROR_FOLDER):
         if not os.path.exists(folder):
             os.makedirs(folder)
             print(f"make dir: {folder}")
 
 
-def write_bytes(p, image_path, mime_type):
-    with  storage.open(image_path,'w',content_type=mime_type) as gcs_file:
-        gcs_file.write(p.image.content.encode('utf-8'))
+def write_bytes(raw_bytes, image_path, mime_type):
+    blob = __get_blob(image_path)
+    blob.upload_from_string(raw_bytes.image.content, content_type=mime_type)
+#    with  storage_client.open(image_path,'w',content_type=mime_type) as gcs_file:
+#        gcs_file.write(raw_bytes.image.content.encode('utf-8'))
 
-def send_file(path, filepath):
+def send_file(path, filepath, metadata = None):
     print(f"Uploading {filepath} to {path}" )
     blob = __get_blob(path)
     blob.upload_from_filename(filepath)
+    if metadata != None:
+        blob.metadata = metadata
+        blob.patch()
     return blob
 
 def __get_bucket(path):
     bucket_name, _ = __parse_url(path)
     return storage_client.get_bucket(bucket_name)
 
-def get_data(path):
-    print("Reading data from %s", path)
+def get_data(path:str):
+    print("Reading data from " + path)
 
     blob = __get_blob(path)
     return blob.download_as_string()
@@ -61,7 +67,7 @@ def __parse_url(path):
     print(f"Invalid GCS path: {path}")
 
 def get_file(path, filepath):
-    print("Reading data from %s to %s", path, filepath)
+    print(f"Reading data from {path} to {filepath}", path, filepath)
 
     blob = __get_blob(path)
     return blob.download_to_filename(filepath)
@@ -83,8 +89,8 @@ def backupAndDeleteInput(event, gcs_archive_bucket_name = var.gcs_archive_bucket
     blob_copy = source_bucket.copy_blob(
         source_blob, destination_bucket, event['name'])
     # delete from the input folder
-    print(f"delete input file to: {source_blob.path} {event['name']}")
-    source_blob.delete()
+    #print(f"delete input file to: {source_blob.path} {event['name']}")
+    #source_blob.delete()
 
 
 
@@ -191,13 +197,13 @@ def extract_signed_url_from_bytes(event, page_number , raw_bytes, mime_type):
     destination_bucket = storage_client.bucket(
                         var.gcs_archive_bucket_name)
     image_name = event['name'] + \
-                        "-page-" + page_number + ".jpg"
+                        "-page-" + str(page_number) + ".jpg"
     image_path = os.path.join(
                         var.gcs_archive_bucket_name, image_name)
     write_bytes(raw_bytes, image_path, mime_type)
 
     signed_url = generate_signed_url(
-                        "google.com_ml-baguette-demos-f1b859baa944.json", var.gcs_archive_bucket_name, image_name)
-    print("image signed url")
+                        "google.com_ml-baguette-demos.json", var.gcs_archive_bucket_name, image_name)
+    print("image signed url from bytes")
     print(signed_url)
     return signed_url

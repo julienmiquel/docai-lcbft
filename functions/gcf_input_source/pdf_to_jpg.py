@@ -23,7 +23,7 @@ def convert_to_image(filepath_in: str) -> str:
         "pdf2jpeg",  # actual value doesn't matter
         "-dNOPAUSE",
         "-sDEVICE=jpeg",
-        "-r144",
+        "-r300",
         "-sOutputFile=" + filepath_out,
         filepath_in,
     ]
@@ -66,7 +66,7 @@ def convertToImage(file, outputBucket):
     # Set poppler path
     poppler_path = "/var/task/lib/poppler-utils-0.26/usr/bin"
 
-    images = convert_from_path(file, dpi=200, poppler_path=poppler_path)
+    images = convert_from_path(file, dpi=300, poppler_path=poppler_path)
 
     #bucket = storage_client.get_bucket(outputBucket)
 
