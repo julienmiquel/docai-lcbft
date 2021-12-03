@@ -161,6 +161,7 @@ def write_to_bq(entities_extracted_dict, dataset_name=var.dataset_name, table_na
     row_to_insert.append(entities_extracted_dict)
 
     try:
+        #TODO: test this code: row_to_insert = " '{}' ".format(row_to_insert)
         json_data = json.dumps(row_to_insert, sort_keys=False)
         # Convert to a JSON Object
         json_object = json.loads(json_data)

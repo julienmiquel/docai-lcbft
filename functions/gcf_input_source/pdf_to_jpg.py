@@ -3,7 +3,7 @@ from ghostscript import Ghostscript
 import gcs
 
 
-def convert_to_image(filepath_in: str) -> str:
+def convert_to_image(filepath_in: str, dpi = 300) -> str:
     """
     Function that converts a single page pdf file into an image
     taken from https://stackoverflow.com/questions/331918/converting-a-pdf-to-a-series-of-images-with-python
@@ -23,7 +23,7 @@ def convert_to_image(filepath_in: str) -> str:
         "pdf2jpeg",  # actual value doesn't matter
         "-dNOPAUSE",
         "-sDEVICE=jpeg",
-        "-r300",
+        f"-r{dpi}",
         "-sOutputFile=" + filepath_out,
         filepath_in,
     ]
@@ -79,4 +79,57 @@ def convertToImage(file, outputBucket):
         images[i].save(file, 'JPEG')
         gcs.send_file(outputBucket, file)
         #bucket.upload_from_filename(file)
+
+
+import os
+from PIL import Image
+import shutil
+
+def compress_under_size(size, file_path):
+    '''file_path is a string to the file to be custom compressed
+    and the size is the maximum size in bytes it can be which this 
+    function searches until it achieves an approximate supremum'''
+
+    current_size = os.stat(file_path).st_size
+    quality = int(size/current_size*100) 
+
+    print(f"current_size:{current_size} - file: {file_path} ")
+    file_path_out = file_path.replace(".jp", "_scaled.jp")
+
+    if current_size < size:
+        print(f"Nothing to do {current_size}  {size}")
+        shutil.copy(file_path, file_path_out)
+    while current_size > size or quality == 0:
+        print(f"quality : {quality} - {current_size}")
+        if quality == 0:
+            os.remove(file_path_out)
+            print(f"Error: File cannot be compressed below this size: {current_size}")
+            return False, None
+
+        current_size = compress_pic(file_path, file_path_out, quality)
+        current_size = os.stat(file_path_out).st_size
+        if quality < 30:
+            quality -= 5
+        else:
+            quality -= 20
+    
+    print(f"current_size:{current_size} - file: {file_path} ")
+    return True, file_path_out
+
+
+def compress_pic(file_path, file_path_out, qual):
+    '''File path is a string to the file to be compressed and
+    quality is the quality to be compressed down to'''
+    with Image.open(file_path) as picture :
+        dim = picture.size
+        print(f"{dim}")
+        picture = picture.resize((int(dim[0]*qual/100),int(dim[1]*qual/100)))
+        dim = picture.size
+        print(f"{dim}")
+        picture.save(file_path_out,"JPEG", optimize=True, quality=qual) 
+
+        processed_size = os.stat(file_path_out).st_size
+
+        return processed_size
+
 

@@ -99,7 +99,7 @@ resource "google_cloudfunctions_function" "gcf_input" {
   max_instances    = 3
   ingress_settings = "ALLOW_INTERNAL_ONLY"
 
-  available_memory_mb   = 512
+  available_memory_mb   = 1024
   source_archive_bucket = google_storage_bucket.bucket_source_archives.name
   source_archive_object = google_storage_bucket_object.gcf_input_source.name
 

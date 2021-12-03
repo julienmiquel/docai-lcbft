@@ -26,6 +26,7 @@ from google.cloud.documentai_v1.types.document_processor_service import \
 from PyPDF2 import PdfFileReader, PdfFileWriter
 
 import convert
+from predict_types import predict_image_classification
 import gcs
 import kg
 from convert import convert_date
@@ -40,7 +41,7 @@ docai_client_eu = documentai.DocumentProcessorServiceClient(
 docai_client_us = documentai.DocumentProcessorServiceClient()
 
 
-def get_docAIClient(location: str):
+def get_docaiclient(location: str) -> ProcessResponse:
     if(location == "eu"):
         return docai_client_eu
     else:
@@ -76,10 +77,12 @@ docai_processors = {
     "_generic_form_":  [docai_generic_form_parser, "eu", "_generic_form_"],
     "_ri_": [docai_CDE_RI, "us", "_ri_"],
     "_identity_fraud_detector_": [docai_identity_fraud_detector, "eu", "_identity_fraud_detector_"],
+    "_constat_":  [docai_generic_form_parser, "eu", "_constat_"],
+    "_ci_":  ["projects/660199673046/locations/us/processors/9cf695f04326387d", "us", "_ci_"]
 }
 
 
-def getDocType(input: str):
+def get_doctype(input: str, file_content = None):
     """[summary]
     Return type of the document associated with the parser address
 
@@ -91,8 +94,8 @@ def getDocType(input: str):
         str: docAI parser address based on keyword find in the url
     """
 
-    input = input.lower()
-    paths = input.split(os.sep)
+    input_lower = input.lower()
+    paths = input_lower.split(os.sep)
 
     paths = set(paths)
     doc_type = list(set(docai_processors.keys()).intersection(paths))
@@ -103,10 +106,16 @@ def getDocType(input: str):
         processor_path = docai_processors[doc_type][0]
         processor_location = docai_processors[doc_type][1]
     else:
-        doc_type = "_unknown_"
-        processor_path = ""
-        processor_location = ""
-        print(f"_unknown_ type: {input}")
+        if (input_lower.endswith(".jpg") or input_lower.endswith(".jpg")) and file_content != None :
+            print("Try to find the type of the document with AutoML")
+            doc_type = predict_image_classification(file_content)
+            return get_doctype(doc_type)
+
+        else:
+            doc_type = "_unknown_"
+            processor_path = ""
+            processor_location = ""
+            print(f"_unknown_ type: {input_lower}")
 
     print(f"doc_type:{doc_type} - processor_path: {processor_path} - location: {processor_location}")
     return doc_type, processor_path, processor_location
@@ -118,110 +127,21 @@ def docai_extract_doc_from_json(image_content):
     return document
 
 
-def parseDocAIResult(event, gcs_input_uri, uri, t0, doc_type, name, document: documentai.Document, result, key=None):
+def parse_docairesult(event, gcs_input_uri, uri, t0, doc_type, name, document: documentai.Document, result, key=None):
     input_filename = gcs_input_uri
 
     entities_extracted_dict = init_results(uri, doc_type, name, input_filename, key)
-
-    entities_results = []
 
     try:
         if result:
             print(f"hitl: {result.human_review_status}")
             hitl = documentai.HumanReviewStatus(result.human_review_status)
-            if hitl.state == documentai.HumanReviewStatus.State.SKIPPED:
-                print(
-                    f"hitl in progress state_message: {hitl.state_message} - human_review_operation: {hitl.human_review_operation}")
-                entities_extracted_dict['hitl'] = hitl.state_message
+            print(f"hitl in progress state_message: {hitl.state_message} - human_review_operation: {hitl.human_review_operation}")
+            entities_extracted_dict['hitl'] = hitl.state_message
     except Exception as err:
         print(f"error in hitl processing: {input_filename} - ERROR: {err}")
-        print(err)
 
-    entities = document.entities
-    if not entities or len(entities) == 0:
-        entities_extracted_dict = log_error(entities_extracted_dict, "WARNING entities returned by docai is empty", "warning")
-    else:
-        print(f"entities size: {len(entities)}")
-
-        for entity in entities:
-            print(str(entity).replace('\n', '\t'))
-            entity = documentai.Document.Entity(entity)
-            entity_type = convert.cleanEntityType(entity.type_)
-            entity_text = entity.mention_text
-            entity_confidence = entity.confidence
-            hasNormizedValue = False
-            try:
-                nv = documentai.Document.Entity.NormalizedValue(
-                    entity.normalized_value)
-                if nv.text:
-                    print(f"normalized_value: {nv.text}")
-                    entity_text = nv.text
-                    hasNormizedValue = True
-            except:
-                print("warning normalized value not available")
-
-            print(f"{entity_type}:{entity_text} - {entity_confidence}")
-            if hasNormizedValue == True:
-                print(f"using normalized value: {entity_text}")
-                entity_text = str(entity_text)
-                entities_extracted_dict[entity_type] = entity_text
-
-            # Normalize date format in case the entity being read is a date
-            elif "date" in entity_type:
-                entity_text = convert_date(entity_text)
-                if entity_text == None:
-                    entity_type = "error"
-                    entity_text = f"Parser error for entity type:value:{entity_type}:value:{entity_text}"
-                    print(entity_text)
-                
-                entities_extracted_dict[entity_type] = entity_text
-                
-
-            elif "amount" in entity_type:
-                # TODO: FIX this code
-                try:
-                    entity_text = convert.convert_str_to_float(entity_text)
-                except Exception as err:
-                    entities_extracted_dict = log_error(
-                        entities_extracted_dict, "warning float cast after replace , by . : " + entity_text)
-                    entity_text = 0.0
-
-                entities_extracted_dict[entity_type] = entity_text
-
-            else:
-                entity_text = str(entity_text)
-
-                #print("Mention text : " + entity_text)
-                entities_extracted_dict[entity_type] = entity_text
-
-            entities_results.append({"type":entity_type, "value":entity_text, "confidence":entity_confidence})
-
-            # Creating and publishing a message via Pub Sub to validate address
-            if (isContainAddress(entity_type)):
-                if doc_type.find("fr") >= 0:
-                    entity_address = entity_text + " France"
-                else:
-                    entity_address = entity_text
-                message = {
-                    "entity_type": entity_type,
-                    "entity_text": entity_address,
-                    "input_file_name": input_filename,
-                }
-                message_data = json.dumps(message).encode("utf-8")
-
-                kg.sendGeoCodeRequest(message_data)
-                # sendKGRequest(message_data)
-
-            if var.SendKGRequest == True:
-                if (isContainName(entity_type)):
-                    message = {
-                        "entity_type": entity_type,
-                        "entity_text": entity_text,
-                        "input_file_name": input_filename,
-                    }
-                    message_data = json.dumps(message).encode("utf-8")
-
-                    kg.sendKGRequest(message_data)
+    entities_extracted_dict, entities_results = parse_entities(doc_type, document, input_filename, entities_extracted_dict)
 
     print("Read the text recognition output from the processor")
     signed_urls = []
@@ -229,19 +149,24 @@ def parseDocAIResult(event, gcs_input_uri, uri, t0, doc_type, name, document: do
         page = documentai.Document.Page(page)
         print(f"**** Page {page.page_number} ****")
 
-        print(f"Found {len(page.tables)} table(s):")
-        processTables = False
-        if processTables == True:
-            for table in page.tables:
-                #print(table)
-                table = documentai.Document.Page.Table(table)
-                #num_collumns = len(table.header_rows[0].cells)
-                num_rows = len(table.body_rows)
-                print(f'Table with {num_rows} rows:')
-                header_row_text, body_row_text, success = print_table_info(table, document.text)
-                if success == True:
-                    confidence = 0.0
-                    entities_results.append({"type":header_row_text, "value":body_row_text, "confidence":confidence})
+        try:
+            print(f"Found {len(page.tables)} table(s):")
+            process_tables = True
+            if process_tables == True:
+                for table in page.tables:
+                    print(str(table).replace("\n",""))
+                    table = documentai.Document.Page.Table(table)
+
+                    num_rows = len(table.body_rows)
+                    print(f'Table with {num_rows} rows:')
+                    if num_rows > 0:
+                        header_row_text, body_row_text, success = print_table_info(table, document.text)
+                        if success == True:
+                            confidence = 0.0
+                            entities_results.append({"type":header_row_text, "value":body_row_text, "confidence":confidence})
+        except Exception as err:
+            print(f"ERROR table {input_filename}")
+            print(err)
         # try:
         #     p = documentai.Document.Page(page)
         #     if p.image:
@@ -287,24 +212,116 @@ def parseDocAIResult(event, gcs_input_uri, uri, t0, doc_type, name, document: do
     print(f"Writing to BQ: {input_filename}")
     return entities_extracted_dict
 
+def parse_entities(doc_type, document, input_filename, entities_extracted_dict):
+    entities_results = []
+
+    entities = document.entities
+    if not entities or len(entities) == 0:
+        entities_extracted_dict = log_error(entities_extracted_dict, "WARNING entities returned by docai is empty", "warning")
+    else:
+        print(f"entities size: {len(entities)}")
+
+        for entity in entities:
+            print(str(entity).replace('\n', '\t'))
+            entity = documentai.Document.Entity(entity)
+            entity_type = convert.cleanEntityType(entity.type_)
+            entity_text = entity.mention_text
+            entity_confidence = entity.confidence
+            has_normized_value = False
+            try:
+                nv = documentai.Document.Entity.NormalizedValue(
+                    entity.normalized_value)
+                if nv.text:
+                    print(f"normalized_value: {nv.text}")
+                    entity_text = nv.text
+                    has_normized_value = True
+            except Exception as err:
+                print(f"warning normalized value not available: {err}")
+
+            print(f"{entity_type}:{entity_text} - {entity_confidence}")
+            if has_normized_value == True:
+                print(f"using normalized value: {entity_text}")
+                entity_text = str(entity_text)
+                entities_extracted_dict[entity_type] = entity_text
+
+            # Normalize date format in case the entity being read is a date
+            elif "date" in entity_type:
+                entity_text = convert_date(entity_text)
+                if entity_text == None:
+                    entity_type = "error"
+                    entity_text = f"Parser error for entity type:value:{entity_type}:value:{entity_text}"
+                    print(entity_text)
+                
+                entities_extracted_dict[entity_type] = entity_text
+                
+
+            elif "amount" in entity_type:
+                # TODO: FIX this code
+                try:
+                    entity_text = convert.convert_str_to_float(entity_text)
+                except Exception as err:
+                    entities_extracted_dict = log_error(
+                        entities_extracted_dict, "warning float cast after replace , by . : " + entity_text)
+                    entity_text = 0.0
+
+                entities_extracted_dict[entity_type] = entity_text
+
+            else:
+                entity_text = str(entity_text)
+
+                #print("Mention text : " + entity_text)
+                entities_extracted_dict[entity_type] = entity_text
+
+            entities_results.append({"type":entity_type, "value":entity_text, "confidence":entity_confidence})
+
+            # Creating and publishing a message via Pub Sub to validate address
+            if (is_contain_address(entity_type)):
+                if doc_type.find("fr") >= 0:
+                    entity_address = entity_text + " France"
+                else:
+                    entity_address = entity_text
+                message = {
+                    "entity_type": entity_type,
+                    "entity_text": entity_address,
+                    "input_file_name": input_filename,
+                }
+                message_data = json.dumps(message).encode("utf-8")
+
+                kg.sendGeoCodeRequest(message_data)
+                # sendKGRequest(message_data)
+
+            if var.SendKGRequest == True:
+                if (is_contain_name(entity_type)):
+                    message = {
+                        "entity_type": entity_type,
+                        "entity_text": entity_text,
+                        "input_file_name": input_filename,
+                    }
+                    message_data = json.dumps(message).encode("utf-8")
+
+                    kg.sendKGRequest(message_data)
+    return entities_extracted_dict, entities_results 
+
 def print_table_info(table: dict, text: str) :
     # Print header row
     body_row_text = ''
     header_row_text = ''
     try:
-        for header_row in table.header_rows:
-            for header_cell in header_row.cells:
-                header_cell_text = layout_to_text(header_cell.layout, text)
-                header_row_text += f'{repr(header_cell_text.strip())} | '
-            print(f'Collumns: {header_row_text[:-3]}')
+        if table.header_rows  and len(table.header_rows) > 0 :
+            for header_row in table.header_rows:
+                for header_cell in header_row.cells:
+                    header_cell_text = layout_to_text(header_cell.layout, text)
+                    header_row_text += f'{repr(header_cell_text.strip())} | '
+                print(f'Collumns: {header_row_text[:-3]}')
         
         # Print first body row
-        for body_row in table.body_rows:
-            for body_cell in table.body_row.cells:
-                body_cell_text = layout_to_text(body_cell.layout, text)
-                body_row_text += f'{repr(body_cell_text.strip())} | '
-            print(f'First row data: {body_row_text[:-3]}\n')
-        
+        if table.body_rows and len(table.body_rows) > 0 :
+            for body_row in table.body_rows:
+                for body_cell in body_row.cells:
+                    body_cell_text = layout_to_text(body_cell.layout, text)
+                    body_row_text += f'{repr(body_cell_text.strip())} | '
+                print(f'First row data: {body_row_text[:-3]}\n')
+            
         return header_row_text, body_row_text, True
     except Exception as err:
         print(f"ERROR in print_table_info {err}")
@@ -331,7 +348,7 @@ def layout_to_text(layout: dict, text: str) -> str:
     return response
 
 def init_results(uri, doc_type, name, input_filename, key=None):
-    key = getDocumentKey(uri, doc_type, key)
+    key = get_documentkey(uri, doc_type, key)
     print(
         f"key: {key} - input_filename : {input_filename} - doc type : {doc_type} - EP url : {name}")
     # Reading all entities into a dictionary to write into a BQ table
@@ -344,7 +361,7 @@ def init_results(uri, doc_type, name, input_filename, key=None):
         
     return entities_extracted_dict
 
-def getDocumentKey(uri, doc_type, key):
+def get_documentkey(uri, doc_type, key):
     if key==None or key=="":
         key = os.path.dirname(uri.path)[1:]
         key = key.replace(doc_type, "").replace("/", "")
@@ -372,7 +389,7 @@ def log_error(entities_extracted_dict, entity_text, entity_type = "error"):
 
 
 def batch(event, gcs_input_uri):
-    doc_type, processor_path, processor_location = getDocType(gcs_input_uri)
+    doc_type, processor_path, processor_location = get_doctype(gcs_input_uri)
     l_destination_uri = var.destination_uri + event['name'] + '/'
     print('destination_uri:' + l_destination_uri)
 
@@ -395,7 +412,7 @@ def batch(event, gcs_input_uri):
         document_output_config=output_config,
     )
 
-    operation = get_docAIClient(
+    operation = get_docaiclient(
         processor_location).batch_process_documents(request)
 
     print("Wait for the operation to finish")
@@ -417,10 +434,9 @@ def batch(event, gcs_input_uri):
 
 # Doc AI helper
 
-def isContainAddress(entity_type):
+def is_contain_address(entity_type):
     address_substring_tab = ["address", "adresse"]
 
-    address_substring_found = False
     for address_substring in address_substring_tab:
         if address_substring in entity_type.lower():
             print("find address:" + entity_type)
@@ -429,7 +445,7 @@ def isContainAddress(entity_type):
     return False
 
 
-def isContainName(entity_type):
+def is_contain_name(entity_type):
     if "family" in entity_type.lower():
         return True
     if "given" in entity_type.lower():
@@ -437,7 +453,7 @@ def isContainName(entity_type):
     return False
 
 
-def getKey(entity, key):
+def get_key(entity, key):
     if key in entity:
         return entity[key]
 
@@ -452,8 +468,8 @@ def process_raw_bytes(event, gcs_input_uri, uri, image_content, t0, doc_type, na
 
     # , retry= retry.Retry(deadline=60)  ,metadata=  ("jmb", "test"))
     try:
-        result = ProcessResponse(get_docAIClient(
-            processor_location).process_document(request=request))
+        result = get_docaiclient(
+            processor_location).process_document(request=request)
         print("Operation finished succefully")
 
     except Exception as err:
@@ -463,7 +479,7 @@ def process_raw_bytes(event, gcs_input_uri, uri, image_content, t0, doc_type, na
         return entities_extracted_dict
 
     try:
-        entities_extracted_dict = parseDocAIResult(
+        entities_extracted_dict = parse_docairesult(
             event, gcs_input_uri, uri, t0, doc_type, name, result.document, result, key)
 
     except Exception as err:
@@ -475,7 +491,7 @@ def process_raw_bytes(event, gcs_input_uri, uri, image_content, t0, doc_type, na
     return entities_extracted_dict
 
 
-def getDF(document, name, doc_type):
+def get_df(document, name, doc_type):
     lst = [[]]
     lst.pop()
 
@@ -484,22 +500,22 @@ def getDF(document, name, doc_type):
         for entity in document['entities']:
             print(entity)
 
-            type = entity['type']
+            entity_type = entity['type']
             val = entity['mentionText']
             confidence = entity['confidence']
-            lst.append([type, val, type, confidence, name, doc_type])
+            lst.append([entity_type, val, entity_type, confidence, name, doc_type])
     else:
-        type = "ERROR"
+        entity_type = "ERROR"
         val = "Nothing parsed"
         confidence = 1.0
-        lst.append([type, val, type, confidence, name, doc_type])
+        lst.append([entity_type, val, entity_type, confidence, name, doc_type])
 
     df = pd.DataFrame(lst, columns=['key', 'value', 'type', 'confidence', 'file', 'doc_type']
                       )
     return df
 
 
-def curl_docai_alpha(gcsFilePath: str, document_type, fileMimeType: str):
+def curl_docai_alpha(gcs_file_path: str, document_type, file_mime_type: str):
     import requests
 
     api = "https://eu-alpha-documentai.googleapis.com/v1alpha1/projects/google.com:ml-baguette-demos/locations/eu/documents:process"
@@ -513,9 +529,9 @@ def curl_docai_alpha(gcsFilePath: str, document_type, fileMimeType: str):
 
     payload = """{
             input_config: {
-              mime_type: '"""+fileMimeType+"""',
+              mime_type: '"""+file_mime_type+"""',
               gcs_source: {
-                uri: '"""+gcsFilePath+"""'
+                uri: '"""+gcs_file_path+"""'
               }
             },
             document_type: '"""+document_type+"""' 
