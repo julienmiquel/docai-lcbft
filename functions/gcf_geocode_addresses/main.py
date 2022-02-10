@@ -80,8 +80,8 @@ def main_run(event, context):
 def extract_geocode_info(query_address,data_type='json'):
    geocode_response_dict = {} 
    endpoint =f"https://maps.googleapis.com/maps/api/geocode/{data_type}"
-   API_key = os.environ.get('API_KEY')
-   params ={"address": query_address, "key":API_key}
+   api_key = os.environ.get('API_KEY')
+   params ={"address": query_address, "key":api_key}
    url_params = urlencode(params)
    #print(url_params)
    url = f"{endpoint}?{url_params}"
@@ -92,19 +92,12 @@ def extract_geocode_info(query_address,data_type='json'):
        print('status code not in range')
        return {}
    try:
-        #print(message_dict.get('entity_type'))
-        #print(message_dict.get('input_filename'))
-        #print(query_address)
-        #geocode_response_dict["entity_type"] = message_dict.get('entity_type')
-        #geocode_response_dict["input_filename"] = message_dict.get('input_filename')
-        #geocode_response_dict["entity_text"] = query_address
-        print(r.json())
-        
         geocode_response_dict["place_id"] = r.json()['results'][0]['place_id']
         geocode_response_dict["formatted_address"] = r.json()['results'][0]['formatted_address']
         geocode_response_dict["lat"] = str(r.json()['results'][0]['geometry']['location'].get("lat"))
         geocode_response_dict["lng"] = str(r.json()['results'][0]['geometry']['location'].get("lng"))
         print(geocode_response_dict)
-   except:
-       pass
+   except Exception as err:
+     print(err)
+   
    return geocode_response_dict

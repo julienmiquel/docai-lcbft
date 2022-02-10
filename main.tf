@@ -16,8 +16,8 @@ resource "google_project_iam_member" "project" {
 }
 
 // Storage staging
-resource "google_storage_bucket" "gcs_input_doc" {
-  name                        = format("gcs_input_doc_%s", var.env)
+resource "google_storage_bucket" "input_doc" {
+  name                        = format("input_doc_%s", var.env)
   location                    = var.location
   force_destroy               = true
   project                     = var.project
@@ -27,9 +27,9 @@ resource "google_storage_bucket" "gcs_input_doc" {
   }
 }
 
-/*
-resource "google_storage_bucket" "gcs_results_json_dev_kyc" {
-  name                        = "gcs_results_json_dev_kyc" #format("gcs_output_doc_%s", var.env)
+
+resource "google_storage_bucket" "results_json_dev_kyc" {
+  name                        = format("results_json_%s", var.env)
   location                    = var.location
   force_destroy               = true
   project                     = var.project
@@ -38,11 +38,11 @@ resource "google_storage_bucket" "gcs_results_json_dev_kyc" {
     "env" : var.env
   }
 }
-*/
 
 
-resource "google_storage_bucket" "gcs_output_doc" {
-  name                        = format("gcs_output_doc_%s", var.env)
+
+resource "google_storage_bucket" "output_doc" {
+  name                        = format("output_doc_%s", var.env)
   location                    = var.location
   force_destroy               = true
   project                     = var.project
@@ -97,7 +97,7 @@ resource "google_cloudfunctions_function" "gcf_input" {
   entry_point      = "main_run"
   timeout          = 300
   max_instances    = 3
-  ingress_settings = "ALLOW_INTERNAL_ONLY"
+  ingress_settings = "ALLOW_INTERNAL_AND_GCLB"
 
   available_memory_mb   = 1024
   source_archive_bucket = google_storage_bucket.bucket_source_archives.name
@@ -107,7 +107,7 @@ resource "google_cloudfunctions_function" "gcf_input" {
 
   event_trigger {
     event_type = "google.storage.object.finalize"
-    resource   = google_storage_bucket.gcs_input_doc.name
+    resource   = google_storage_bucket.input_doc.name
     failure_policy {
       retry = false
     }
@@ -120,15 +120,15 @@ resource "google_cloudfunctions_function" "gcf_input" {
     BQ_DATASET_NAME = google_bigquery_dataset.dataset_results_docai.dataset_id,
 
     PARSER_LOCATION       = var.PROCESSOR_CNI_LOCATION,
-    PROCESSOR_ID          = var.PROCESSOR_CNI_ID,
+    PROCESSOR_ID          = "",
     TIMEOUT               = 300,
     GCS_OUTPUT_URI_PREFIX = "processed",
 
     GEOCODE_REQUEST_TOPICNAME = google_pubsub_topic.pubsub_geocode_topic.name ,
     KG_REQUEST_TOPICNAME      = google_pubsub_topic.pubsub_getkg_topic.name  ,
 
-    gcs_output_uri = google_storage_bucket.gcs_output_doc.url ,
-    gcs_archive_bucket_name : google_storage_bucket.gcs_output_doc.name
+    gcs_output_uri = google_storage_bucket.output_doc.url ,
+    gcs_archive_bucket_name : google_storage_bucket.output_doc.name
   }
 }
 
@@ -143,7 +143,7 @@ resource "google_cloudfunctions_function" "gcf_input_hitl" {
   entry_point      = "main_run"
   timeout          = 300
   max_instances    = 10
-  ingress_settings = "ALLOW_INTERNAL_ONLY"
+  ingress_settings = "ALLOW_INTERNAL_AND_GCLB"
 
   available_memory_mb   = 256
   source_archive_bucket = google_storage_bucket.bucket_source_archives.name
@@ -153,7 +153,7 @@ resource "google_cloudfunctions_function" "gcf_input_hitl" {
 
   event_trigger {
     event_type = "google.storage.object.finalize"
-    resource   = "gcs_results_json_dev_kyc"# google_storage_bucket.gcs_results_json_dev_kyc.name
+    resource   = google_storage_bucket.results_json_dev_kyc.name
     failure_policy {
       retry = false
     }
@@ -167,15 +167,15 @@ resource "google_cloudfunctions_function" "gcf_input_hitl" {
     BQ_DATASET_NAME = google_bigquery_dataset.dataset_results_docai.dataset_id,
 
     PARSER_LOCATION       = var.PROCESSOR_CNI_LOCATION,
-    PROCESSOR_ID          = var.PROCESSOR_CNI_ID,
+    PROCESSOR_ID          = "",
     TIMEOUT               = 300,
     GCS_OUTPUT_URI_PREFIX = "processed",
 
     GEOCODE_REQUEST_TOPICNAME = google_pubsub_topic.pubsub_geocode_topic.name ,
     KG_REQUEST_TOPICNAME      = google_pubsub_topic.pubsub_getkg_topic.name  ,
 
-    gcs_output_uri = google_storage_bucket.gcs_output_doc.url ,
-    gcs_archive_bucket_name : google_storage_bucket.gcs_output_doc.name
+    gcs_output_uri = google_storage_bucket.output_doc.url ,
+    gcs_archive_bucket_name : google_storage_bucket.output_doc.name
   }
 }
 
@@ -223,7 +223,7 @@ resource "google_cloudfunctions_function" "gcf_geocode_addresses" {
   entry_point      = "main_run"
   timeout          = 300
   max_instances    = 3
-  ingress_settings = "ALLOW_INTERNAL_ONLY"
+  ingress_settings = "ALLOW_INTERNAL_AND_GCLB"
 
 
   available_memory_mb   = 256
@@ -248,7 +248,7 @@ resource "google_cloudfunctions_function" "gcf_geocode_addresses" {
   environment_variables = {
     BQ_DATASET_NAME = google_bigquery_dataset.dataset_results_docai.dataset_id,
     GEOCODE_REQUEST_TOPICNAME = google_pubsub_topic.pubsub_geocode_topic.name ,
-    API_KEY = var.API_KEY_KG_GEOCODES
+    API_KEY = ""
   }
 }
 
@@ -296,7 +296,7 @@ resource "google_cloudfunctions_function" "gcf_getkg_data" {
   entry_point      = "main_run"
   timeout          = 300
   max_instances    = 3
-  ingress_settings = "ALLOW_INTERNAL_ONLY"
+  ingress_settings = "ALLOW_INTERNAL_AND_GCLB"
 
   available_memory_mb   = 256
   source_archive_bucket = google_storage_bucket.bucket_source_archives.name

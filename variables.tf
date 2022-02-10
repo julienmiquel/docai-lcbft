@@ -16,10 +16,6 @@ variable "env" {
   default = "dev_lcbft_1"
 }
 
-variable "PROCESSOR_CNI_ID" {
-  default = "7b9066f18d0c7366"
-}
-
 variable "PROCESSOR_CNI_LOCATION" {
   default = "eu"
 }

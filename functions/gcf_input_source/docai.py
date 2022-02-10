@@ -48,21 +48,24 @@ def get_docaiclient(location: str) -> ProcessResponse:
         return docai_client_us
 
 
+# Processors to be replaced
 name = f"projects/660199673046/locations/eu/processors/7b9066f18d0c7366"
 docai_fr_driver_license = "projects/660199673046/locations/eu/processors/cee6a410ee499b69"
 docai_fr_national_id = "projects/660199673046/locations/eu/processors/57993de9b197ee1f"
 docai_us_passport = "projects/660199673046/locations/eu/processors/3bd9c32d439b29cf"
 docai_us_driver_license = "projects/660199673046/locations/eu/processors/57993de9b197e27c"
-#docai_invoice = "projects/660199673046/locations/eu/processors/abf12796440cc270"
-docai_invoice = "projects/660199673046/locations/eu/processors/1371b8b51ffedfe8"
-docai_generic_form_parser = "projects/660199673046/locations/eu/processors/aa8e86c6aa939dc"
-
 docai_CDC_parser = "projects/660199673046/locations/eu/processors/6eebfeaa729d5106"
 docai_CDE_RI = "projects/660199673046/locations/us/processors/172b5b9064c5a2fb"
 docai_identity_fraud_detector = "projects/660199673046/locations/eu/processors/e1b002e051d94abc"
 docai_contract = "projects/660199673046/locations/us/processors/9ee5a69d042731a4"
 
+# Argolis processors
+docai_invoice = "projects/419369677904/locations/eu/processors/ebb4e0c9a770bdb8"
+docai_generic_form_parser = "projects/419369677904/locations/eu/processors/eefa17dff85dfaa7"
+docai_expense ="projects/419369677904/locations/eu/processors/fef35dbb4552569c"
+
 docai_processors = {
+    "docai_expense": [docai_expense, "eu", "expense"],
     "fr_driver_license": [docai_fr_driver_license, "eu", "fr_driver_license"],
     "fr_national_id":  [docai_fr_national_id, "eu", "fr_national_id"],
     "fr_passport":  [docai_us_passport, "eu", "fr_passport_not_yet_supported"],
@@ -312,19 +315,23 @@ def print_table_info(table: dict, text: str) :
                 for header_cell in header_row.cells:
                     header_cell_text = layout_to_text(header_cell.layout, text)
                     header_row_text += f'{repr(header_cell_text.strip())} | '
-                print(f'Collumns: {header_row_text[:-3]}')
-        
+                print(f'Collumns: {header_row_text}')
+    except Exception as err:
+        print(f"ERROR in print_table_info header {err}")
+        print(err)
+    
+    try:        
         # Print first body row
         if table.body_rows and len(table.body_rows) > 0 :
             for body_row in table.body_rows:
                 for body_cell in body_row.cells:
                     body_cell_text = layout_to_text(body_cell.layout, text)
                     body_row_text += f'{repr(body_cell_text.strip())} | '
-                print(f'First row data: {body_row_text[:-3]}\n')
+                print(f'First row data: {body_row_text}\n')
             
         return header_row_text, body_row_text, True
     except Exception as err:
-        print(f"ERROR in print_table_info {err}")
+        print(f"ERROR in print_table_info row {err}")
         print(err)
 
     return header_row_text, body_row_text, False
