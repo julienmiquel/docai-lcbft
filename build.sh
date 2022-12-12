@@ -1,6 +1,6 @@
 echo replace project_ID by your GCP project_ID
-export project_ID=XXXXXX
-export ENV=kyc_kb_geo_demo
+export project_ID=docai-335917
+export ENV=demo
 echo -var="env=${ENV}" -var="project=${project_ID}"
 
 terraform destroy -auto-approve -var="env=${ENV}" -var="project=${project_ID}"
