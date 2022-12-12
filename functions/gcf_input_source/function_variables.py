@@ -53,6 +53,14 @@ class FunctionVariables:
     BackupAndDeleteInput = True # os.environ.get('BackupAndDeleteInput')
     SendKGRequest = False
 
+    PROCESSOR_fr_driver_license          = os.environ.get('PROCESSOR_fr_driver_license')
+    PROCESSOR_fr_national_id             = os.environ.get('PROCESSOR_fr_national_id')
+    PROCESSOR_fr_passport                = os.environ.get('PROCESSOR_fr_passport')
+    PROCESSOR_id_proofing                = os.environ.get('PROCESSOR_id_proofing')
+    PROCESSOR_us_passport                = os.environ.get('PROCESSOR_us_passport')
+    PROCESSOR_us_driver_license          = os.environ.get('PROCESSOR_us_driver_license')
+
+
     def FunctionVariables(self):
         project_id = self.get_env()
         gcs_output_uri_prefix = os.environ.get('GCS_OUTPUT_URI_PREFIX')

@@ -48,40 +48,36 @@ def get_docaiclient(location: str) -> ProcessResponse:
         return docai_client_us
 
 
-# Processors to be replaced
-name = f"projects/660199673046/locations/eu/processors/7b9066f18d0c7366"
-docai_fr_driver_license = "projects/660199673046/locations/eu/processors/cee6a410ee499b69"
-docai_fr_national_id = "projects/660199673046/locations/eu/processors/57993de9b197ee1f"
-docai_us_passport = "projects/660199673046/locations/eu/processors/3bd9c32d439b29cf"
-docai_us_driver_license = "projects/660199673046/locations/eu/processors/57993de9b197e27c"
-docai_CDC_parser = "projects/660199673046/locations/eu/processors/6eebfeaa729d5106"
-docai_CDE_RI = "projects/660199673046/locations/us/processors/172b5b9064c5a2fb"
-docai_identity_fraud_detector = "projects/660199673046/locations/eu/processors/e1b002e051d94abc"
-docai_contract = "projects/660199673046/locations/us/processors/9ee5a69d042731a4"
 
-# Argolis processors
-docai_invoice = "projects/419369677904/locations/eu/processors/ebb4e0c9a770bdb8"
-docai_generic_form_parser = "projects/419369677904/locations/eu/processors/eefa17dff85dfaa7"
-docai_expense ="projects/419369677904/locations/eu/processors/fef35dbb4552569c"
+# Processors to be replaced
+
+docai_fr_driver_license = var.PROCESSOR_fr_driver_license
+docai_fr_national_id = var.PROCESSOR_fr_national_id
+docai_fr_passport = var.PROCESSOR_fr_passport
+docai_us_passport = var.PROCESSOR_us_passport
+docai_us_driver_license = var.PROCESSOR_us_driver_license
+docai_identity_fraud_detector = var.PROCESSOR_id_proofing
+
+docai_CDC_parser = ""
+docai_CDE_RI = ""
+docai_contract = ""
+docai_invoice = ""
+docai_generic_form_parser = ""
+docai_expense = ""
 
 docai_processors = {
     "docai_expense": [docai_expense, "eu", "expense"],
     "fr_driver_license": [docai_fr_driver_license, "eu", "fr_driver_license"],
     "fr_national_id":  [docai_fr_national_id, "eu", "fr_national_id"],
-    "fr_passport":  [docai_us_passport, "eu", "fr_passport_not_yet_supported"],
-
+    "fr_passport":  [docai_fr_passport, "eu", "fr_passport"],
     "invoice":  [docai_invoice, "eu", "invoice"],
-
     "us_passport":  [docai_us_passport, "eu", "us_passport"],
     "us_driver_license":  [docai_us_driver_license, "eu", "us_driver_license"],
-
     "_contract_": [docai_contract, "us", "_contract_"],
 
     "_generic_form_":  [docai_generic_form_parser, "eu", "_generic_form_"],
-    "_ri_": [docai_CDE_RI, "us", "_ri_"],
     "_identity_fraud_detector_": [docai_identity_fraud_detector, "eu", "_identity_fraud_detector_"],
-    "_constat_":  [docai_generic_form_parser, "eu", "_constat_"],
-    "_ci_":  ["projects/660199673046/locations/us/processors/9cf695f04326387d", "us", "_ci_"]
+    "_constat_":  [docai_generic_form_parser, "eu", "_constat_"]
 }
 
 

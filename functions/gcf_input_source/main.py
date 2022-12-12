@@ -134,9 +134,6 @@ def main_run(event, context):
         if delete_blob == True:
             blob.delete()
 
-        # Check business rules
-        if var.CheckBusinessRules:
-            bq.checkBusinessRule()
 
         # Copy input file to archive bucket
         if var.BackupAndDeleteInput == True:
