@@ -1,9 +1,10 @@
 variable "region" {
   default = "europe-west1"
 }
-
+/*
 variable "API_KEY_KG_GEOCODES" {
 }
+*/
 variable "project" {
   
 }
@@ -13,7 +14,7 @@ variable "location" {
 }
 
 variable "env" {
-  default = "dev_lcbft_1"
+  default = "dev"
 }
 
 variable "PROCESSOR_CNI_LOCATION" {
@@ -21,7 +22,7 @@ variable "PROCESSOR_CNI_LOCATION" {
 }
 
 variable "service_account_name" {
-  default = "lcbft-sa-3"
+  default = "demo-docai-sa"
 }
 
 

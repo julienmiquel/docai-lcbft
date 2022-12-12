@@ -26,7 +26,7 @@ resource "google_bigquery_dataset" "dataset_results_docai" {
 }
 
 
-
+/*
 resource "google_bigquery_table" "business_rules_result" {
   dataset_id          = google_bigquery_dataset.dataset_results_docai.dataset_id
   table_id            = "business_rules_result"
@@ -98,7 +98,7 @@ resource "google_bigquery_table" "business_rules" {
 ]
 EOF
 }
-
+*/
 
 resource "google_bigquery_table" "results_table" {
   dataset_id          = google_bigquery_dataset.dataset_results_docai.dataset_id
@@ -153,7 +153,7 @@ EOF
 
 }
 
-
+/*
 resource "google_bigquery_table" "knowledge_graph_details" {
   dataset_id          = google_bigquery_dataset.dataset_results_docai.dataset_id
   table_id            = "knowledge_graph_details"
@@ -260,7 +260,7 @@ resource "google_bigquery_table" "geocodes_details" {
 EOF
 
 }
-
+*/
 
 
 resource "google_bigquery_table" "doc_ai_extracted_entities" {

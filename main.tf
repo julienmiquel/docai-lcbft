@@ -120,7 +120,13 @@ resource "google_cloudfunctions_function" "gcf_input" {
     BQ_DATASET_NAME = google_bigquery_dataset.dataset_results_docai.dataset_id,
 
     PARSER_LOCATION       = var.PROCESSOR_CNI_LOCATION,
-    PROCESSOR_ID          = "",
+    PROCESSOR_fr_national_id             = google_document_ai_processor.fr_national.id,
+    PROCESSOR_fr_driver_license          = google_document_ai_processor.fr_driver_license.id,
+    PROCESSOR_fr_passport                = google_document_ai_processor.fr_passport.id,
+    PROCESSOR_id_proofing                = google_document_ai_processor.id_proofing.id,
+    PROCESSOR_us_passport                = google_document_ai_processor.us_passport.id,
+    PROCESSOR_us_driver_license          = google_document_ai_processor.us_driver_license.id,
+
     TIMEOUT               = 300,
     GCS_OUTPUT_URI_PREFIX = "processed",
 
@@ -197,7 +203,7 @@ resource "google_pubsub_topic" "pubsub_geocode_topic" {
 
 
 // Cloud function geocode
-
+/*
 //Source
 data "archive_file" "gcf_geocode_addresses_source" {
   type        = "zip"
@@ -251,7 +257,7 @@ resource "google_cloudfunctions_function" "gcf_geocode_addresses" {
     API_KEY = ""
   }
 }
-
+*/
 
 
 
@@ -270,7 +276,7 @@ resource "google_pubsub_topic" "pubsub_getkg_topic" {
 }
 
 // Cloud function geocode
-
+/*
 //Source
 data "archive_file" "gcf_getkg_source" {
   type        = "zip"
@@ -323,3 +329,4 @@ resource "google_cloudfunctions_function" "gcf_getkg_data" {
     API_KEY = var.API_KEY_KG_GEOCODES
   }
 }
+*/
