@@ -12,84 +12,6 @@ import convert
 var = FunctionVariables()
 
 
-# Create a dict to create the schema
-# and to avoid BigQuery load job fails due to unknown fields
-# bq_schema = {
-#     "input_file_name": "STRING",
-#     "insert_date": "DATETIME",
-#     "doc_type": "STRING",
-#     "signed_url": "STRING",
-#     "key": "STRING",
-#     "image": "BYTES",
-
-#     # CI
-#     "family_name": "STRING",
-#     "date_of_birth": "DATE",
-#     "document_id": "STRING",
-#     "given_names": "STRING",
-
-#     "address": "STRING",
-#     "expiration_date": "DATE",    
-#     "issue_date": "DATE",
-
-#     "error": "STRING",
-#     "timer": "INTEGER",
-#     "result": "STRING",
-#     "hitl": "STRING",
-
-#     # identity Fraud detection
-#     "fraud_signals_suspicious_words": "STRING",
-#     "fraud_signals_is_identity_document": "STRING",
-#     "fraud_signals_image_manipulation": "STRING",
-
-#     # entities
-
-
-#     # Invoices
-#     "carrier": "STRING",
-#     "currency": "STRING",
-#     "currency_exchange_rate": "STRING",
-#     "customer_tax_id": "STRING",
-#     "delivery_date": "DATE",
-#     "due_date": "DATE",
-#     "freight_amount": "FLOAT",
-#     "invoice_date": "DATE",
-#     "invoice_id": "STRING",
-#     "net_amount": "FLOAT",
-#     "payment_terms": "STRING",
-#     "purchase_order": "STRING",
-#     "receiver_address": "STRING",
-#     "receiver_email": "STRING",
-#     "receiver_name": "STRING",
-#     "receiver_phone": "STRING",
-#     "receiver_tax_id": "STRING",
-#     "remit_to_address": "STRING",
-#     "remit_to_name": "STRING",
-#     "ship_from_address": "STRING",
-#     "ship_from_name": "STRING",
-#     "ship_to_address": "STRING",
-#     "ship_to_name": "STRING",
-#     "supplier_address": "STRING",
-#     "supplier_email": "STRING",
-#     "supplier_iban": "STRING",
-#     "supplier_name": "STRING",
-#     "supplier_phone": "STRING",
-#     "supplier_registration": "STRING",
-#     "supplier_tax_id": "STRING",
-#     "supplier_website": "STRING",
-#     "total_amount": "FLOAT",
-#     "total_tax_amount": "FLOAT",
-#     "vat_tax_amount": "FLOAT",
-#     "vat_tax_rate": "STRING",
-#     "line_item": "STRING",
-#     "receipt_date": "DATE",
-#     "purchase_time": "STRING",
-#     "supplier_city": "STRING"
-# }
-# bq_load_schema = []
-# for key, value in bq_schema.items():
-#     bq_load_schema.append(bigquery.SchemaField(key, value))
-
 def read_bigquery_schema_from_json_recursive(json_schema):
     """
     CAUTION: Recursive function
@@ -117,7 +39,7 @@ def read_bigquery_schema_from_json_recursive(json_schema):
     return result 
 
 bq_load_schema = None
-with open('bq_docai_extracted_entities.json') as json_file:
+with open('bq_docai_id.json') as json_file:
     bq_schema = json.load(json_file)
     bq_load_schema = read_bigquery_schema_from_json_recursive(bq_schema)
     print("bq_load_schema init")

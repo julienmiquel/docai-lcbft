@@ -21,7 +21,6 @@ from google.api_core.exceptions import FailedPrecondition
 from google.cloud import aiplatform
 from google.cloud.aiplatform.gapic.schema import predict
 
-from pdf_to_jpg import compress_under_size
 
 
 
@@ -64,17 +63,8 @@ def predict_image_classification(
         print(f"ERROR: {err.args}")
         if "exceeds 1.500MB limit" in f"{err.args}":
             print("Try to reduce size and relaunch because of the automl 1.500MB limit")
-            tmpFile = os.path.join(tempfile.gettempdir(), "tmp.jpg" ) 
-            with open(tmpFile, "wb") as f:
-                f.write(file_content)
-            success, outpath =compress_under_size(1.2*1024*1024, tmpFile)
-            if success==True:
-                with open(outpath, "rb") as f:
-                    content = f.read()
-                    return predict_image_classification(content)
-            else:
-                raise err
-
+            
+        raise err
 
     # See gs://google-cloud-aiplatform/schema/predict/prediction/classification.yaml for the format of the predictions.
     predictions = response.predictions

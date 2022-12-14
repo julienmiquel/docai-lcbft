@@ -1,0 +1,132 @@
+[
+    {
+        "mode": "NULLABLE",
+        "name": "input_file_name",
+        "type": "STRING",
+        "description": "key of processed file"
+    },    
+    {
+        "mode": "NULLABLE",
+        "name": "output_file_name",
+        "type": "STRING",
+        "description": "file copied to output folder"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "insert_date",
+        "type": "DATETIME",
+        "description": "date of insert"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "doc_type",
+        "type": "STRING",
+        "description": "type of the document processed"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "key",
+        "type": "STRING",
+        "description": "key to be share between different documents"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "hitl",
+        "type": "STRING",
+        "description": "HITL ID"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "family_name",
+        "type": "STRING",
+        "description": "CI"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "date_of_birth",
+        "type": "DATE",
+        "description": "CI"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "document_id",
+        "type": "STRING",
+        "description": "CI"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "given_names",
+        "type": "STRING",
+        "description": "CI"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "address",
+        "type": "STRING",
+        "description": "CI verso"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "expiration_date",
+        "type": "DATE",
+        "description": "CI verso"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "issue_date",
+        "type": "DATE",
+        "description": "CI verso"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "error",
+        "type": "STRING",
+        "description": "error message"
+    },
+    {
+        "name": "entities",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+            {
+                "name": "type",
+                "type": "STRING",
+                "mode": "NULLABLE"
+            },
+            {
+                "name": "value",
+                "type": "STRING",
+                "mode": "NULLABLE"
+            },
+            {
+                "name": "confidence",
+                "type": "FLOAT",
+                "mode": "NULLABLE"
+            }
+        ]
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "fraud_signals_suspicious_words",
+        "type": "STRING",
+        "description": "Suspicious word check: predict whether words are present that aren’t typical on IDs"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "fraud_signals_is_identity_document",
+        "type": "STRING",
+        "description": "Is ID check: predict whether an image contains an identity document"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "fraud_signals_image_manipulation",
+        "type": "STRING",
+        "description": "Image manipulation check: predict whether the image was altered or tampered via a image editing tool such as Photoshop"
+    },
+    {
+        "mode": "NULLABLE",
+        "name": "timer",
+        "type": "INTEGER",
+        "description": "processing time"
+    } 
+]

@@ -1,8 +1,8 @@
 # GCP sdk
-google-cloud-storage==1.42.1
-google-cloud-aiplatform==1.1.1
-google-cloud-documentai==1.0.0
-google-cloud-bigquery==2.20.0
+google-cloud-storage>=1.42.1
+google-cloud-aiplatform>=1.1.1
+google-cloud-documentai>=2.4.1
+google-cloud-bigquery>=2.20.0
 google-cloud-pubsub>=1.7.0
 google-cloud-logging
 

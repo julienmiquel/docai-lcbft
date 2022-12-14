@@ -8,7 +8,6 @@ import docai
 import gcs
 from function_variables import FunctionVariables
 from pdf import split_one_pdf_pages
-from pdf_to_jpg import convert_all_pdf_to_jpg
 
 var = FunctionVariables()
 
@@ -60,45 +59,12 @@ def main_run(event, context):
             print("type unknown")
             entities_extracted_dict = docai.log_error(docai.init_results(uri, doc_type, name, gcs_input_uri), "type unknown")
 
-
-        # create tmp folder
-        gcs.create_tmp_folders()
-        print("convert pdf to image before processing")
-
-        print(f"Preprocessing split from uri: {gcs_input_uri}")
-        tmp_pdf_filepaths, success = split_one_pdf_pages(gcs_input_uri)
-        if success == False:
-            print("ERROR split_one_pdf_pages fail " + gcs_input_uri)
-        else:
-            tmp_jpg_filepaths = convert_all_pdf_to_jpg(tmp_pdf_filepaths)
-            if tmp_jpg_filepaths != []:
-                for file in tmp_jpg_filepaths:
-                    output = os.path.join(
-                        gcs_input_uri, os.path.basename(file))
-                    print(f"Send file: {file} to {output}")
-
-                    blob_jpg = gcs.send_file(output, file,
-                                         {
-                                             "key":   entities_extracted_dict["key"],
-                                             "doc_type":   entities_extracted_dict["doc_type"],
-                                             "input_file_name":   entities_extracted_dict["input_file_name"]
-                                         })
-                    print(
-                        f"Successfully sent jpg pages of file{blob_jpg.public_url}  ")
-
-            else:
-                print("error convert_all_pdf_to_jpg return no files")
-
-        if var.BackupAndDeleteInput == True:
-            # Copy input file to archive bucket
-            gcs.backupAndDeleteInput(event)
-
         return
 
     # if the type of the input file is an json
     # we will parse the results and store it into BQ
     if(str(event['name']).endswith(".json") or event['contentType'] == 'application/json'):
-        doc_type = "invoice"
+        doc_type = "hitl"
         name = "hitl"
 
         document = docai.docai_extract_doc_from_json(image_content)
@@ -110,8 +76,7 @@ def main_run(event, context):
 
     # if the content is an image, the content will be send to docAI in synchronous way
     # Store the result in BQ
-    elif(event['contentType'] == 'image/gif'  # or event['contentType'] == 'application/pdf'
-         or event['contentType'] == 'image/tiff' or event['contentType'] == 'image/jpeg'):
+    elif(event['contentType'] == 'image/gif' or event['contentType'] == 'image/tiff' or event['contentType'] == 'image/jpeg'):
 
         doc_type, name, processor_location = docai.get_doctype(gcs_input_uri, image_content)
 
@@ -130,15 +95,6 @@ def main_run(event, context):
         # Write the entities to BQ
         bq.write_to_bq(entities_extracted_dict)
 
-        delete_blob = False
-        if delete_blob == True:
-            blob.delete()
-
-
-        # Copy input file to archive bucket
-        if var.BackupAndDeleteInput == True:
-            gcs.backupAndDeleteInput(event)
-
     else:
         print('Cannot parse the file type')
 
@@ -154,50 +110,17 @@ def fraud_detection(event, gcs_input_uri, uri, image_content, t0, doc_type, enti
             entities_extracted_dict["fraud_signals_suspicious_words"] = entities_id_extracted_dict_fraud["fraud_signals_suspicious_words"]
             entities_extracted_dict["fraud_signals_is_identity_document"] = entities_id_extracted_dict_fraud["fraud_signals_is_identity_document"]
             entities_extracted_dict["fraud_signals_image_manipulation"] = entities_id_extracted_dict_fraud["fraud_signals_image_manipulation"]
+            entities_extracted_dict["evidence_inconclusive_suspicious_word"] = entities_id_extracted_dict_fraud["evidence_inconclusive_suspicious_word"]
+            entities_extracted_dict["fraud_signals_online_duplicate"] = entities_id_extracted_dict_fraud["fraud_signals_online_duplicate"]
+            entities_extracted_dict["evidence_hostname"] = entities_id_extracted_dict_fraud["evidence_hostname"]
+            entities_extracted_dict["evidence_thumbnail_url"] = entities_id_extracted_dict_fraud["evidence_thumbnail_url"]
         except Exception as err:
             print(f"ERROR in Fraud detection for {gcs_input_uri}")
             print(err)
 
 
-def main_run_batch(event, context):
-    gcs_input_uri = 'gs://' + event['bucket'] + '/' + event['name']
-    print('Printing the contentType: ' +
-          event['contentType'] + ' input:' + gcs_input_uri)
-
-    t0 = time.time()
-
-    if(event['contentType'] == 'image/gif' or event['contentType'] == 'application/pdf'
-       or event['contentType'] == 'image/tiff' or event['contentType'] == 'image/jpeg'):
-
-        doc_type, blob_list = docai.batch(event, gcs_input_uri)
-
-        for i, blob in enumerate(blob_list):
-            # Download the contents of this blob as a bytes object.
-            if ".json" not in blob.name:
-                print("blob name " + blob.name)
-                print(f"skipping non-supported file type {blob.name}")
-            else:
-
-                # Setting the output file name based on the input file name
-                print("Fetching from " + blob.name +
-                      " for input_filename " + gcs_input_uri)
-
-                # Getting ready to read the output of the parsed document - setting up "document"
-                blob_as_bytes = blob.download_as_bytes()
-
-                name = "json"
-
-                document = docai.docai_extract_doc_from_json(blob_as_bytes)
-
-                entities_extracted_dict = docai.parse_docairesult(
-                    event, gcs_input_uri, urlparse(gcs_input_uri), t0, doc_type, name, document, None)
-                # Write the entities to BQ
-                bq.write_to_bq(entities_extracted_dict)
-                delete_blob = False
-                if delete_blob == True:
-                    blob.delete()
-
-        # Copy input file to archive bucket
-        gcs.backupAndDeleteInput(event)
-    else:
-        print('Cannot parse the file type')
+if __name__ == '__main__':
+    print('Calling from main')
+    testEvent={"bucket":var.project_id+"", "contentType": "application/pdf", "name":"CI-1.pdf"}
+    testContext='test'
+    main_run(testEvent,testContext)

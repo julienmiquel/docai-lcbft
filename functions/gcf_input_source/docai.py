@@ -28,7 +28,6 @@ from PyPDF2 import PdfFileReader, PdfFileWriter
 import convert
 from predict_types import predict_image_classification
 import gcs
-import kg
 from convert import convert_date
 from function_variables import FunctionVariables
 
@@ -166,21 +165,7 @@ def parse_docairesult(event, gcs_input_uri, uri, t0, doc_type, name, document: d
         except Exception as err:
             print(f"ERROR table {input_filename}")
             print(err)
-        # try:
-        #     p = documentai.Document.Page(page)
-        #     if p.image:
-        #         print(f"found an image in docai result in {input_filename}")
-        #         i = documentai.Document.Page.Image(p.image)
 
-        #         signed_url_img = gcs.extract_signed_url_from_bytes(
-        #             event, p.page_number, i.content, i.mime_type)
-
-        #         entities_extracted_dict['signed_url'] = signed_url_img
-        #         signed_urls.append(signed_url_img)
-        # except Exception as err:
-        #     print(f"image error  {input_filename}")
-        #     print(err)
-        
         print(f'Found {len(page.form_fields)} form fields:')
         for form_field in page.form_fields:
             entity_type = layout_to_text(form_field.field_name, document.text)
@@ -194,18 +179,6 @@ def parse_docairesult(event, gcs_input_uri, uri, t0, doc_type, name, document: d
 
     entities_extracted_dict["entities"] = entities_results
     entities_extracted_dict['timer'] = int(time.time()-t0)
-
-    signed_url = gcs.generate_signed_url(
-        "google.com_ml-baguette-demos.json", var.gcs_archive_bucket_name, event['name'])
-    print(signed_url)
-    
-    entities_extracted_dict['signed_url'] = signed_url
-    
-    entities_extracted_dict['output_file_name'] = os.path.join("gs://", var.gcs_archive_bucket_name, event['name'])
-
-    if len(signed_urls) > 0:
-        print(signed_urls)
-        entities_extracted_dict['signed_urls'] = signed_urls
 
     print(entities_extracted_dict)
     print(f"Writing to BQ: {input_filename}")
@@ -286,19 +259,7 @@ def parse_entities(doc_type, document, input_filename, entities_extracted_dict):
                 }
                 message_data = json.dumps(message).encode("utf-8")
 
-                kg.sendGeoCodeRequest(message_data)
-                # sendKGRequest(message_data)
 
-            if var.SendKGRequest == True:
-                if (is_contain_name(entity_type)):
-                    message = {
-                        "entity_type": entity_type,
-                        "entity_text": entity_text,
-                        "input_file_name": input_filename,
-                    }
-                    message_data = json.dumps(message).encode("utf-8")
-
-                    kg.sendKGRequest(message_data)
     return entities_extracted_dict, entities_results 
 
 def print_table_info(table: dict, text: str) :
@@ -386,54 +347,6 @@ def log_error(entities_extracted_dict, entity_text, entity_type = "error"):
 
 
 
-# Extract shards from the text field
-
-
-
-
-def batch(event, gcs_input_uri):
-    doc_type, processor_path, processor_location = get_doctype(gcs_input_uri)
-    l_destination_uri = var.destination_uri + event['name'] + '/'
-    print('destination_uri:' + l_destination_uri)
-
-    gcs_documents = documentai.GcsDocuments(
-        documents=[{"gcs_uri": gcs_input_uri,
-                    "mime_type": event['contentType']}]
-    )
-
-    input_config = documentai.BatchDocumentsInputConfig(
-        gcs_documents=gcs_documents)
-
-    # Where to write results
-    output_config = documentai.DocumentOutputConfig(
-        gcs_output_config={"gcs_uri": var.destination_uri}
-    )
-
-    request = documentai.types.document_processor_service.BatchProcessRequest(
-        name=processor_path,
-        input_documents=input_config,
-        document_output_config=output_config,
-    )
-
-    operation = get_docaiclient(
-        processor_location).batch_process_documents(request)
-
-    print("Wait for the operation to finish")
-
-    operation.result(timeout=timeout)
-    print("Operation finished")
-
-    match = re.match(r"gs://([^/]+)/(.+)", l_destination_uri)
-    output_bucket = match.group(1)
-    prefix = match.group(2)
-
-    # Get a pointer to the GCS bucket where the output will be placed
-    bucket = gcs.storage_client.get_bucket(output_bucket)
-
-    blob_list = list(bucket.list_blobs(prefix=prefix))
-    print(f"Processing output files from prefix: {prefix}")
-    return doc_type, blob_list
-
 
 # Doc AI helper
 
@@ -469,7 +382,6 @@ def process_raw_bytes(event, gcs_input_uri, uri, image_content, t0, doc_type, na
 
     print("Wait for the operation to finish")
 
-    # , retry= retry.Retry(deadline=60)  ,metadata=  ("jmb", "test"))
     try:
         result = get_docaiclient(
             processor_location).process_document(request=request)
@@ -494,55 +406,3 @@ def process_raw_bytes(event, gcs_input_uri, uri, image_content, t0, doc_type, na
     return entities_extracted_dict
 
 
-def get_df(document, name, doc_type):
-    lst = [[]]
-    lst.pop()
-
-    entities = document.get('entities')
-    if entities:
-        for entity in document['entities']:
-            print(entity)
-
-            entity_type = entity['type']
-            val = entity['mentionText']
-            confidence = entity['confidence']
-            lst.append([entity_type, val, entity_type, confidence, name, doc_type])
-    else:
-        entity_type = "ERROR"
-        val = "Nothing parsed"
-        confidence = 1.0
-        lst.append([entity_type, val, entity_type, confidence, name, doc_type])
-
-    df = pd.DataFrame(lst, columns=['key', 'value', 'type', 'confidence', 'file', 'doc_type']
-                      )
-    return df
-
-
-def curl_docai_alpha(gcs_file_path: str, document_type, file_mime_type: str):
-    import requests
-
-    api = "https://eu-alpha-documentai.googleapis.com/v1alpha1/projects/google.com:ml-baguette-demos/locations/eu/documents:process"
-    headers = {
-        "Authorization": var.getToken(),
-        "Content-Type": "application/json",
-        "charset": "utf-8",
-        "X-Goog-User-Project": var.get_env()
-
-    }
-
-    payload = """{
-            input_config: {
-              mime_type: '"""+file_mime_type+"""',
-              gcs_source: {
-                uri: '"""+gcs_file_path+"""'
-              }
-            },
-            document_type: '"""+document_type+"""' 
-        }"""
-
-    print("Send post request:" + payload)
-    r = requests.post(api, data=payload, headers=headers)
-    json = r.json()
-    print("Result")
-    print(json)
-    return json

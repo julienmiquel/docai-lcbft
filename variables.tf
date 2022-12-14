@@ -1,10 +1,7 @@
 variable "region" {
   default = "europe-west1"
 }
-/*
-variable "API_KEY_KG_GEOCODES" {
-}
-*/
+
 variable "project" {
   
 }

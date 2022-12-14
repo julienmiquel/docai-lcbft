@@ -25,7 +25,7 @@ class FunctionVariables:
         credentials.refresh(auth_req)
         return "Bearer " + credentials.token
 
-
+    genSignedUrl = False 
 
     gcs_output_uri_prefix = os.environ.get('GCS_OUTPUT_URI_PREFIX')
     

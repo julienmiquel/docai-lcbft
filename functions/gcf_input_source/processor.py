@@ -8,12 +8,8 @@ import time
 from typing import Any, Dict, Mapping, Sequence
 import urllib
 
-from model_factory import http_client
 from google.api_core.retry import Retry
 from google.cloud import storage
-from joblib import delayed
-from joblib import Parallel
-from tqdm import tqdm
 
 _THREADS_COUNT = 30
 _MAX_BATCH_SIZE = 50
@@ -208,7 +204,6 @@ class BaseProcessor:
         return merged_document
 
     def import_documents(self, path: str, dataset_name: str):
-        print("import_documents jm")
         """Imports documents.
 
     Args:
