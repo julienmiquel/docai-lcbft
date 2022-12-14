@@ -1,5 +1,4 @@
 import json
-import logging
 import time
 
 from google.api_core.exceptions import BadRequest, Forbidden
@@ -83,7 +82,6 @@ def write_to_bq(entities_extracted_dict, dataset_name=var.dataset_name, table_na
     row_to_insert.append(entities_extracted_dict)
 
     try:
-        #TODO: test this code: row_to_insert = " '{}' ".format(row_to_insert)
         json_data = json.dumps(row_to_insert, sort_keys=False)
         # Convert to a JSON Object
         json_object = json.loads(json_data)
@@ -107,7 +105,7 @@ def write_to_bq(entities_extracted_dict, dataset_name=var.dataset_name, table_na
         try:
             retryCount = retryCount + 1
 
-            error = job.result(retry=DEFAULT_RETRY)  # Waits for table load to complete.
+            error = job.result(retry=DEFAULT_RETRY, timeout=retryCount*1000)   # Waits for table load to complete.
             print("BQ completed")
             print(error)
             return 
@@ -115,7 +113,7 @@ def write_to_bq(entities_extracted_dict, dataset_name=var.dataset_name, table_na
         except Forbidden as e:
             for e in job.errors:
                 print(f'BQ ERROR {retryCount} Forbidden: {e}') 
-                time.sleep(retryCount)
+                time.sleep(retryCount*100)
                 
                 if retryCount >= 3:
                     print('BQ FATAL Forbidden: {}'.format(e)) 
@@ -125,69 +123,4 @@ def write_to_bq(entities_extracted_dict, dataset_name=var.dataset_name, table_na
             for e in job.errors:
                 print('BQ ERROR BadRequest: {}'.format(e)) 
             return
-
-
-
-
-def bqInsert(rows_to_insert, table_id):
-    from google.cloud import bigquery
-
-    # Construct a BigQuery client object.
-    client = bigquery.Client()
-
-    # Make an API request.
-    errors = client.insert_rows_json(table_id, rows_to_insert)
-    if errors == []:
-        print("New rows have been added.")
-    else:
-        print("Encountered errors while inserting rows: {}".format(errors))
-
-
-
-
-
-def checkBusinessRule(dataset_name= var.dataset_name):
-    #/// Check business rules
-    # Perform a query.
-    QUERY = (
-        f'SELECT name, query FROM `{dataset_name}.business_rules` '
-        'WHERE trigger = "every_insert" ')
-
-    rows = query(QUERY)
-
-    row_to_insert = []
-    for row in rows:
-        row_to_insert = runBusinessRule(row_to_insert, row.query)
-    
-    if len(row_to_insert) > 0:
-        write_to_bq(dataset_name,"business_rules_result", row_to_insert)
-    else:
-        print("No business rules matched")
-
-    return 
-    runBusinessRule(row_to_insert, f'SELECT input_file_name, "address_is_null" as name FROM \
-        `{dataset_name}.doc_ai_extracted_entities` where address is null')
-
-    runBusinessRule(row_to_insert, f'SELECT input_file_name, "address_not_found" as name FROM \
-        `{dataset_name}.doc_ai_extracted_entities` where address is not null and input_file_name not in (select input_file_name from `{dataset_name}.geocodes_details`) ')
-
-def query(QUERY):
-    query_job = bq_client.query(QUERY)  # API request
-    rows = query_job.result()  # Waits for query to finish
-    print(rows)
-    
-    return rows
-
-
-def runBusinessRule(row_to_insert, query):
-    print(f'business rule: {query}')
-        
-    query_job = bq_client.query(query)  # API request
-    rows_business_rule = query_job.result()  # Waits for query to finish
-
-    for row_rule_matched in rows_business_rule:
-        print(f'Row returned: {row_rule_matched.name} = {row_rule_matched.input_file_name}')
-        row_to_insert[str(row_rule_matched.name)] = str(row_rule_matched.input_file_name)
-
-    return row_to_insert
 

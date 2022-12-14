@@ -1,6 +1,5 @@
 import os
 import re
-import tempfile
 from google.cloud import storage
 
 from function_variables import FunctionVariables
@@ -10,10 +9,6 @@ var = FunctionVariables()
 
 
 storage_client = storage.Client()
-
-
-
-
 
 
 def create_tmp_folders():
@@ -33,8 +28,9 @@ def write_bytes(raw_bytes, image_path, mime_type):
 #    with  storage_client.open(image_path,'w',content_type=mime_type) as gcs_file:
 #        gcs_file.write(raw_bytes.image.content.encode('utf-8'))
 
-def send_file(path, filepath, metadata = None):
-    print(f"Uploading {filepath} to {path}" )
+
+def send_file(path, filepath, metadata=None):
+    print(f"Uploading {filepath} to {path}")
     blob = __get_blob(path)
     blob.upload_from_filename(filepath)
     if metadata != None:
@@ -42,15 +38,18 @@ def send_file(path, filepath, metadata = None):
         blob.patch()
     return blob
 
+
 def __get_bucket(path):
     bucket_name, _ = __parse_url(path)
     return storage_client.get_bucket(bucket_name)
 
-def get_data(path:str):
+
+def get_data(path: str):
     print("Reading data from " + path)
 
     blob = __get_blob(path)
     return blob.download_as_string()
+
 
 def __get_blob(path):
     bucket_name, file_name = __parse_url(path)
@@ -66,6 +65,7 @@ def __parse_url(path):
 
     print(f"Invalid GCS path: {path}")
 
+
 def get_file(path, filepath):
     print(f"Reading data from {path} to {filepath}", path, filepath)
 
@@ -80,7 +80,7 @@ def get_raw_bytes(uri):
     return image_content, blob
 
 
-def backupAndDeleteInput(event, gcs_archive_bucket_name = var.gcs_archive_bucket_name):
+def backupAndDeleteInput(event, gcs_archive_bucket_name=var.gcs_archive_bucket_name):
     source_bucket = storage_client.bucket(event['bucket'])
     source_blob = source_bucket.blob(event['name'])
     destination_bucket = storage_client.bucket(gcs_archive_bucket_name)
@@ -88,9 +88,7 @@ def backupAndDeleteInput(event, gcs_archive_bucket_name = var.gcs_archive_bucket
     print(f"backup input file to: {destination_bucket.path}{event['name']}")
     blob_copy = source_bucket.copy_blob(
         source_blob, destination_bucket, event['name'])
+    
     # delete from the input folder
-    #print(f"delete input file to: {source_blob.path} {event['name']}")
-    #source_blob.delete()
-
-
-
+    print(f"delete input file to: {source_blob.path} {event['name']}")
+    source_blob.delete()

@@ -5,7 +5,7 @@ import tempfile
 class FunctionVariables:
     """[summary]
     All parameters variables of the function
-    """    
+    """
     def get_env():
         print(os.environ)
         if 'GCP_PROJECT' in os.environ:
@@ -14,7 +14,7 @@ class FunctionVariables:
         _, project_id = google.auth.default()
         print(project_id)
         return project_id
-    
+
     def getToken():
         import google.auth
         import google.auth.transport.requests
@@ -25,10 +25,10 @@ class FunctionVariables:
         credentials.refresh(auth_req)
         return "Bearer " + credentials.token
 
-    genSignedUrl = False 
+    genSignedUrl = False
 
     gcs_output_uri_prefix = os.environ.get('GCS_OUTPUT_URI_PREFIX')
-    
+
     gcs_output_uri = os.environ.get('gcs_output_uri')
     gcs_archive_bucket_name = os.environ.get('gcs_archive_bucket_name')
 
@@ -45,22 +45,23 @@ class FunctionVariables:
     JPG_FOLDER = os.path.join(TMP_FOLDER, "jpg")
     ERROR_FOLDER = os.path.join(TMP_FOLDER, "error")
 
-
     project_id = get_env()
 
-    #static parameters of the function
-    CheckBusinessRules = False # os.environ.get('CheckBusinessRules')
-    BackupAndDeleteInput = True # os.environ.get('BackupAndDeleteInput')
+    # static parameters of the function
+    CheckBusinessRules = False  # os.environ.get('CheckBusinessRules')
+    BackupAndDeleteInput = True  # os.environ.get('BackupAndDeleteInput')
     SendKGRequest = False
 
-    PROCESSOR_fr_driver_license          = os.environ.get('PROCESSOR_fr_driver_license')
-    PROCESSOR_fr_national_id             = os.environ.get('PROCESSOR_fr_national_id')
-    PROCESSOR_fr_passport                = os.environ.get('PROCESSOR_fr_passport')
-    PROCESSOR_id_proofing                = os.environ.get('PROCESSOR_id_proofing')
-    PROCESSOR_us_passport                = os.environ.get('PROCESSOR_us_passport')
-    PROCESSOR_us_driver_license          = os.environ.get('PROCESSOR_us_driver_license')
+    PROCESSOR_fr_driver_license = os.environ.get('PROCESSOR_fr_driver_license')
+    PROCESSOR_fr_national_id = os.environ.get('PROCESSOR_fr_national_id')
+    PROCESSOR_fr_passport = os.environ.get('PROCESSOR_fr_passport')
+    PROCESSOR_id_proofing = os.environ.get('PROCESSOR_id_proofing')
+    PROCESSOR_us_passport = os.environ.get('PROCESSOR_us_passport')
+    PROCESSOR_us_driver_license = os.environ.get('PROCESSOR_us_driver_license')
 
+    PROCESSOR_us_driver_license = os.environ.get('PROCESSOR_us_driver_license')
 
+    PARSER_LOCATION = os.environ.get('PARSER_LOCATION')
     def FunctionVariables(self):
         project_id = self.get_env()
         gcs_output_uri_prefix = os.environ.get('GCS_OUTPUT_URI_PREFIX')

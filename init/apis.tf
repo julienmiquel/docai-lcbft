@@ -25,8 +25,9 @@ locals {
     "cloudtrace.googleapis.com",
     "cloudtrace.googleapis.com",
     "cloudfunctions.googleapis.com",
-    "documentai.googleapis.com"
-
+    "documentai.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "eventarc.googleapis.com"
   ]
 }
 
