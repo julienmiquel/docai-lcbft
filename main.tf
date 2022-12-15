@@ -50,6 +50,11 @@ resource "google_project_iam_member" "gcs_account_pubsub-publisher" {
   member = "serviceAccount:${data.google_storage_project_service_account.gcs_account.email_address}"
 }
 
+resource "google_project_iam_member" "gcs_serviceaccounttokencreator" {
+  project = var.project
+  role    = "roles/iam.serviceAccountTokenCreator"
+  member = "serviceAccount:${data.google_storage_project_service_account.gcs_account.email_address}"
+}
 
 // Storage staging
 resource "google_storage_bucket" "input_doc" {
@@ -110,9 +115,60 @@ resource "google_storage_bucket_object" "gcf_input_source" {
 }
 
 
+resource "google_cloudfunctions_function" "gcf_input" {
+  name        = format("docai-input-v1-%s", var.env)
+  description = "gcf_input process input pdf"
+  region      = var.region
+  project     = var.project
+
+  runtime          = "python39"
+  entry_point      = "main_run"
+  timeout          = 300
+  max_instances    = 3
+  ingress_settings = "ALLOW_INTERNAL_AND_GCLB"
+
+  available_memory_mb   = 1024
+  source_archive_bucket = google_storage_bucket.bucket_source_archives.name
+  source_archive_object = google_storage_bucket_object.gcf_input_source.name
+
+  service_account_email = google_service_account.sa.email #var.service_account_email  
+
+  event_trigger {
+    event_type = "google.storage.object.finalize"
+    resource   = google_storage_bucket.input_doc.name
+    failure_policy {
+      retry = true
+    }
+  }
+  labels = {
+    "env" : var.env
+  }
+
+
+  environment_variables = {
+      BQ_DATASET_NAME = google_bigquery_dataset.docai.dataset_id,
+
+      PARSER_LOCATION       = var.PROCESSOR_CNI_LOCATION,
+      PROCESSOR_fr_national_id             = google_document_ai_processor.fr_national.id,
+      PROCESSOR_fr_driver_license          = google_document_ai_processor.fr_driver_license.id,
+      PROCESSOR_fr_passport                = google_document_ai_processor.fr_passport.id,
+      PROCESSOR_id_proofing                = google_document_ai_processor.id_proofing.id,
+      PROCESSOR_us_passport                = google_document_ai_processor.us_passport.id,
+      PROCESSOR_us_driver_license          = google_document_ai_processor.us_driver_license.id,
+
+      TIMEOUT               = 300,
+      GCS_OUTPUT_URI_PREFIX = "processed",
+
+
+      gcs_output_uri = google_storage_bucket.output_doc.url ,
+      gcs_archive_bucket_name : google_storage_bucket.output_doc.name
+    }
+}
+
 //function to process input documents
+/*
 resource "google_cloudfunctions2_function" "gcf_input" {
-  name        = format("docai-input-%s", var.env)
+  name        = format("docai-input-v2-%s", var.env)
   description = "gcf input process input pdf"
   location      = var.region
   project     = var.project
@@ -168,3 +224,6 @@ resource "google_cloudfunctions2_function" "gcf_input" {
     }
 
 }
+
+
+*/
